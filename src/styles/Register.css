@@ -1,0 +1,79 @@
+.register-container {
+  display: flex;
+  height: 100vh;
+  background-color: #f5f5f5;
+  font-family: "Noto Sans KR", sans-serif;
+}
+
+.register-page {
+  flex-grow: 1;
+  padding: 30px;
+  background-color: #f5f5f5;
+}
+
+.register-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.approve-button {
+  background-color: #2cd0ae;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.driver-table {
+  width: 100%;
+  border-collapse: collapse;
+  background-color: white;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.driver-table th,
+.driver-table td {
+  border-bottom: 1px solid #eee;
+  padding: 12px;
+  text-align: center;
+}
+
+.driver-row:hover {
+  background-color: #f8f8f8;
+  cursor: pointer;
+}
+
+.driver-img {
+  width: 30px;
+  margin-right: 8px;
+  vertical-align: middle;
+}
+
+.detail-row td {
+  background-color: #fafafa;
+}
+
+.detail-box {
+  display: flex;
+  justify-content: space-around;
+  padding: 15px;
+  font-size: 14px;
+}
+
+.detail-box div {
+  text-align: center;
+}
+
+.danger-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  background-color: red;
+  border-radius: 50%;
+  margin-right: 6px;
+}

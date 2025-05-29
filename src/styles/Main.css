@@ -1,0 +1,256 @@
+html {
+  overflow-y: scroll;
+}
+
+.main-container {
+  display: flex;
+  min-height: 100vh;
+  background: #f9f9f9;
+  font-family: "Noto Sans KR", sans-serif;
+}
+
+.main-content {
+  flex-grow: 1;
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+}
+
+.stats {
+  display: flex;
+  gap: 20px;
+  margin-bottom: 20px;
+  margin-top: 10px;
+}
+
+.stat-card {
+  background: white;
+  padding: 20px;
+  border-radius: 10px;
+  flex: 1;
+  font-size: 14px;
+  box-shadow: 0 0 8px rgba(0, 0, 0, 0.05);
+}
+
+.stat-card strong {
+  font-size: 20px;
+  display: block;
+  margin-top: 8px;
+}
+
+.stat-card.warning {
+  color: red;
+  font-weight: bold;
+  background-color: #fff7f7;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  height: 100%;
+  max-width: 265px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.main-body {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+}
+
+.map-area {
+  flex: 2;
+  background: #eee;
+  height: 500px;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.map-placeholder {
+  text-align: center;
+  color: #999;
+}
+
+.danger-side-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 265px;
+  width: 100%;
+  align-items: stretch;
+  box-sizing: border-box;
+}
+
+.danger-list {
+  list-style: none;
+  margin: 0px 0 0;
+  padding: 0;
+  width: 100%;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  max-width: 265px;
+}
+
+.danger-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #ffecec;
+  padding: 6px 10px;
+  border-radius: 6px;
+  margin-bottom: 6px;
+  cursor: pointer;
+  width: 100%;
+  max-width: 265px;
+  box-sizing: border-box;
+}
+
+.danger-list li.active {
+  background-color: #ffcccc;
+}
+
+.danger-list img {
+  width: 28px;
+  height: 28px;
+  margin-right: 8px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.danger-detail {
+  background: #fff;
+  padding: 20px;
+  border-radius: 10px;
+  box-shadow: 0 0 6px rgba(0, 0, 0, 0.05);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  max-width: 265px;
+  box-sizing: border-box;
+  flex-shrink: 0;
+}
+
+.danger-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 30px 35px 30px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid #ddd;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.danger-detail-header img.profile-image {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.danger-detail-header .info {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.danger-detail-header .info h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: bold;
+}
+
+.danger-detail-header .info span {
+  font-size: 14px;
+  color: #999;
+}
+
+.danger-detail p {
+  width: 100%;
+  max-width: 100%;
+  padding: 0;
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.danger-detail .section-divider {
+  width: 100%;
+  border-bottom: 1px solid #ddd;
+  margin: 16px 0;
+  box-sizing: border-box;
+}
+
+.timeline {
+  width: 100%;
+  max-width: 100%;
+  margin: 16px 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+.timeline p {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  margin: 10px 0;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.alert-btn {
+  margin-top: 20px;
+  padding: 12px 24px;
+  background: red;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: bold;
+  width: 100%;
+  max-width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  box-sizing: border-box;
+}
+
+.red {
+  color: red;
+}
+
+.dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+}
+
+.dot.yellow {
+  background: yellow;
+}
+.dot.orange {
+  background: orange;
+}
+.dot.red {
+  background: red;
+}
+
+.heart_rate_graph {
+  width: 100%;
+  max-width: 200px;
+  height: auto;
+  margin: 16px auto;
+  display: block;
+  box-sizing: border-box;
+  padding: 0;
+}

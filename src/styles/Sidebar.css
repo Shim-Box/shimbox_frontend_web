@@ -1,0 +1,44 @@
+.sidebar {
+  width: 220px;
+  background-color: white;
+  padding: 20px;
+  border-right: 1px solid #ddd;
+  font-family: "Noto Sans KR", sans-serif;
+  min-height: 100vh; // 수정
+  box-sizing: border-box; // 수정
+}
+
+.sidebar-logo {
+  font-size: 28px;
+  font-weight: bold;
+  color: black;
+  margin-bottom: 30px;
+}
+
+.sidebar-logo .sidebar-quote {
+  color: #2cd0ae;
+  font-size: 32px;
+  vertical-align: middle;
+}
+
+.sidebar ul {
+  list-style: none;
+  padding: 0;
+}
+
+.sidebar-link {
+  display: block;
+  padding: 10px 14px;
+  border-radius: 10px;
+  text-decoration: none;
+  font-size: 16px;
+  color: #aaa;
+  margin-bottom: 10px;
+  transition: background-color 0.3s, color 0.3s;
+}
+
+.sidebar-link.active {
+  background-color: #2cd0ae;
+  color: white;
+  font-weight: bold;
+}
