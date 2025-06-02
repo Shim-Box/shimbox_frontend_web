@@ -4,8 +4,9 @@
   padding: 20px;
   border-right: 1px solid #ddd;
   font-family: "Noto Sans KR", sans-serif;
-  min-height: 100vh; // 수정
-  box-sizing: border-box; // 수정
+  min-height: 100vh;
+  align-self: stretch;
+  box-sizing: border-box;
 }
 
 .sidebar-logo {

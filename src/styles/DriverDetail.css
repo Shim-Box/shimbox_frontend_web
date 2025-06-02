@@ -9,7 +9,14 @@ body,
   font-family: "Noto Sans KR", sans-serif;
 }
 
+.driver-layout {
+  display: flex;
+  min-height: 100vh;
+  box-sizing: border-box;
+}
+
 .driver-detail-container {
+  flex: 1;
   display: flex;
   padding: 20px;
   gap: 30px;
