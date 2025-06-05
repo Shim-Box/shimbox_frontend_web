@@ -61,7 +61,7 @@ const Login: React.FC = () => {
           <p style={{ color: "red", marginTop: "0.5rem" }}>{errorMsg}</p>
         )}
         <button className="login-button" onClick={handleLogin}>
-          관리자 로그인
+          로그인
         </button>
       </div>
     </div>
