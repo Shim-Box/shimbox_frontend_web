@@ -1,4 +1,3 @@
-// src/pages/Login.tsx
 import React, { useState, useContext, useEffect } from "react";
 import "../styles/Login.css";
 import { useNavigate } from "react-router-dom";
@@ -27,11 +26,11 @@ const Login: React.FC = () => {
       const res = await loginApi({ username, password });
       // 로그인 성공: 토큰을 context + sessionStorage에 저장
       setToken(res.access_token);
-      // /main으로 이동
+
       navigate("/main");
     } catch (err: any) {
       console.error(err);
-      // 에러 응답 메시지에 따라 다르게 표시하고 싶다면 err.response.data.message 참조 가능
+
       setErrorMsg("로그인에 실패했습니다. 아이디/비밀번호를 확인하세요.");
     }
   };

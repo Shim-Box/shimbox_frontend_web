@@ -1,4 +1,3 @@
-// src/pages/Main.tsx
 import React, { useState } from "react";
 import Sidebar from "../pages/Sidebar";
 import "../styles/Main.css";

@@ -42,7 +42,24 @@ const allDrivers = [
     deliveries: "150 / 250",
     condition: "좋음",
   },
-  /* … 생략 … */
+  {
+    id: 5,
+    name: "박지현",
+    status: "출근",
+    area: "성북구",
+    time: "AM 11:00 - PM 08:00",
+    deliveries: "150 / 250",
+    condition: "좋음",
+  },
+  {
+    id: 6,
+    name: "최영수",
+    status: "퇴근",
+    area: "성북구",
+    time: "AM 11:00 - PM 08:00",
+    deliveries: "150 / 250",
+    condition: "좋음",
+  },
 ];
 
 const DriverDetail: React.FC = () => {

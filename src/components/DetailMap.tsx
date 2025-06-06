@@ -28,7 +28,6 @@ function DetailMap({ address }: DetailMapProps) {
     geocoder.addressSearch(address, (result: any, status: any) => {
       if (status === window.kakao.maps.services.Status.OK) {
         const { x, y } = result[0];
-        // 숫자만 담긴 객체로 변경 → 타입 호환 OK
         setCenter({ lat: y, lng: x });
         setIsLoading(false);
       } else {

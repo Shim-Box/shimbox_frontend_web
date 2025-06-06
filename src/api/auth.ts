@@ -1,4 +1,3 @@
-// src/api/auth.ts
 import axios from "axios";
 
 const API_BASE = "http://localhost:4000";
