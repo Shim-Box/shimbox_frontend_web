@@ -61,14 +61,9 @@ html {
 .map-area {
   flex: 2;
   background: #eee;
-  height: 500px;
+  height: 590px;
   border-radius: 8px;
   overflow: hidden;
-}
-
-.map-placeholder {
-  text-align: center;
-  color: #999;
 }
 
 .danger-side-panel {

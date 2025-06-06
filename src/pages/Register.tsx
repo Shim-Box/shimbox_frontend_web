@@ -6,7 +6,7 @@ const dummyDrivers = Array.from({ length: 8 }, (_, i) => ({
   id: i,
   name: "홍길동",
   career: "주 4-5일/ 6~8시간",
-  license: "1종",
+  license: "인증 완료",
   area: "성북구",
   phone: "010-8524-5648",
   birth: "99.05.05",

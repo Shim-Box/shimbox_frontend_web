@@ -3,6 +3,8 @@ import { useParams } from "react-router-dom";
 import Sidebar from "../pages/Sidebar";
 import "../styles/DriverDetail.css";
 
+import DetailMap from "../components/DetailMap";
+
 const allDrivers = [
   {
     id: 1,
@@ -40,24 +42,7 @@ const allDrivers = [
     deliveries: "150 / 250",
     condition: "좋음",
   },
-  {
-    id: 5,
-    name: "박지현",
-    status: "출근",
-    area: "성북구",
-    time: "AM 11:00 - PM 08:00",
-    deliveries: "150 / 250",
-    condition: "좋음",
-  },
-  {
-    id: 6,
-    name: "최영수",
-    status: "퇴근",
-    area: "성북구",
-    time: "AM 11:00 - PM 08:00",
-    deliveries: "150 / 250",
-    condition: "좋음",
-  },
+  /* … 생략 … */
 ];
 
 const DriverDetail: React.FC = () => {
@@ -81,9 +66,9 @@ const DriverDetail: React.FC = () => {
             />
             <h3>{driver.name}</h3>
             <p className="position">택배기사</p>
-            <p>전화번호: {driver.phone}</p>
-            <p>거주지: {driver.address}</p>
-            <p>담당지: {driver.area}</p>
+            {driver.phone && <p>전화번호: {driver.phone}</p>}
+            {driver.address && <p>거주지: {driver.address}</p>}
+            {driver.area && <p>담당지: {driver.area}</p>}
             <p className="danger-note">
               위험 특이사항:{" "}
               <span className="red">
@@ -110,8 +95,12 @@ const DriverDetail: React.FC = () => {
 
         <section className="center-panel">
           <div className="delivery-wrapper">
-            <div className="map-area">[지도 영역 - 퍼블리싱용]</div>
+            {/* 지도 영역 */}
+            <div className="driver-detail-map-area">
+              <DetailMap address="경인로 661 신도림1차푸르지오" />
+            </div>
 
+            {/* 배송 목록 & 타임라인 */}
             <div className="delivery-bottom-section">
               <div className="delivery-list">
                 <h4>

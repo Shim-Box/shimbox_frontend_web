@@ -1,6 +1,9 @@
+// src/pages/Main.tsx
 import React, { useState } from "react";
 import Sidebar from "../pages/Sidebar";
 import "../styles/Main.css";
+
+import DetailMap from "../components/DetailMap";
 
 const dummyDangerList = [
   { id: 1, name: "홍길동", bpm: 190 },
@@ -44,7 +47,10 @@ const Main: React.FC = () => {
 
         <div className="main-body">
           <div className="map-area">
-            <div className="map-placeholder">[지도 영역 — 퍼블리싱용]</div>
+            <DetailMap
+              address="
+서울특별시 구로구 경인로 445"
+            />
           </div>
 
           {hasDanger && (
