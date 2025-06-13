@@ -62,7 +62,7 @@ const Manage: React.FC = () => {
               onChange={(e) => handleFilterChange("attendance", e.target.value)}
             >
               <option value="">근무상태</option>
-              <option value="출근">출근</option>
+              <option value="출근전">출근전</option>
               <option value="퇴근">퇴근</option>
             </select>
             <select
@@ -71,7 +71,8 @@ const Manage: React.FC = () => {
             >
               <option value="">근무지</option>
               <option value="구로구">구로구</option>
-              <option value="성북구">성북구</option>
+              <option value="강남구">강남구</option>
+              <option value="종로구">종로구</option>
             </select>
             <select
               value={filters.conditionStatus}

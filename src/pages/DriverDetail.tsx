@@ -1,105 +1,92 @@
-import React from "react";
+// src/pages/DriverDetail.tsx
+import React, { useState, useEffect, useContext } from "react";
 import { useParams } from "react-router-dom";
 import Sidebar from "../pages/Sidebar";
 import "../styles/DriverDetail.css";
-
 import DetailMap from "../components/DetailMap";
-
-const allDrivers = [
-  {
-    id: 1,
-    name: "홍길동",
-    phone: "010-1234-1234",
-    address: "서울시 구로구",
-    area: "서울시 구로구",
-    status: "출근",
-    condition: "위험",
-  },
-  {
-    id: 2,
-    name: "오아영",
-    phone: "010-5678-1234",
-    address: "서울시 구로구",
-    area: "서울시 구로구",
-    status: "출근",
-    condition: "불안",
-  },
-  {
-    id: 3,
-    name: "김민수",
-    phone: "010-1111-2222",
-    address: "서울시 성북구",
-    area: "서울시 성북구",
-    status: "퇴근",
-    condition: "불안",
-  },
-  {
-    id: 4,
-    name: "이수진",
-    status: "퇴근",
-    area: "구로구",
-    time: "AM 11:00 - PM 08:00",
-    deliveries: "150 / 250",
-    condition: "좋음",
-  },
-  {
-    id: 5,
-    name: "박지현",
-    status: "출근",
-    area: "성북구",
-    time: "AM 11:00 - PM 08:00",
-    deliveries: "150 / 250",
-    condition: "좋음",
-  },
-  {
-    id: 6,
-    name: "최영수",
-    status: "퇴근",
-    area: "성북구",
-    time: "AM 11:00 - PM 08:00",
-    deliveries: "150 / 250",
-    condition: "좋음",
-  },
-];
+import { ApiService } from "../services/apiService";
+import { ApprovedUser } from "../models/AdminModels";
+import { AuthContext } from "../context/AuthContext";
 
 const DriverDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
-  const driver = allDrivers.find((d) => d.id === Number(id));
+  const { token } = useContext(AuthContext);
+
+  const [driver, setDriver] = useState<ApprovedUser | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!token) return;
+    setLoading(true);
+    ApiService.fetchApprovedUsers(token, { page: 1, size: 1000 })
+      .then((resp) => {
+        // resp.data.items 는 ApprovedUser[]
+        const found = resp.data.find((d) => d.id === Number(id));
+        setDriver(found ?? null);
+      })
+      .catch((err) => console.error("기사 상세 조회 실패", err))
+      .finally(() => setLoading(false));
+  }, [token, id]);
+
+  if (loading) {
+    return (
+      <div className="driver-layout">
+        <Sidebar />
+        <div className="driver-detail-container">
+          <p>로딩 중...</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!driver) {
-    return <div style={{ padding: 30 }}>해당 기사를 찾을 수 없습니다.</div>;
+    return (
+      <div className="driver-layout">
+        <Sidebar />
+        <div className="driver-detail-container">
+          <p>해당 기사를 찾을 수 없습니다.</p>
+        </div>
+      </div>
+    );
   }
 
   return (
     <div className="driver-layout">
       <Sidebar />
       <div className="driver-detail-container">
+        {/* 왼쪽 프로필 카드 */}
         <section className="left-panel">
           <div className="profile-card">
             <img
-              src="/images/PostDeliver.png"
+              src={driver.profileImageUrl || "/images/PostDeliver.png"}
               alt="기사 프로필"
               className="profile-image"
             />
             <h3>{driver.name}</h3>
             <p className="position">택배기사</p>
-            {driver.phone && <p>전화번호: {driver.phone}</p>}
-            {driver.address && <p>거주지: {driver.address}</p>}
-            {driver.area && <p>담당지: {driver.area}</p>}
-            <p className="danger-note">
-              위험 특이사항:{" "}
-              <span className="red">
-                {driver.condition === "위험" ? "고혈압" : "-"}
-              </span>
+
+            <p>거주지: {driver.residence}</p>
+            <p>담당지: {driver.residence}</p>
+            <p>
+              근무상태:{" "}
+              <strong
+                className={`status-badge ${
+                  driver.attendance === "출근" ? "on" : "off"
+                }`}
+              >
+                {driver.attendance}
+              </strong>
             </p>
-            <p className="risk-score">
+            <p>
               위험 지수:{" "}
-              <span className={driver.condition === "좋음" ? "good" : "red"}>
-                {driver.condition}
-              </span>
+              <span className={`condition-dot ${driver.conditionStatus}`}>
+                ●
+              </span>{" "}
+              {driver.conditionStatus}
             </p>
           </div>
 
+          {/* 아직 API가 없어서 플래이스홀더 */}
           <div className="health-card">
             <p>
               💓 심박수: <strong>88 bpm</strong>
@@ -110,11 +97,12 @@ const DriverDetail: React.FC = () => {
           </div>
         </section>
 
+        {/* 중앙 지도 & 배송 부분 */}
         <section className="center-panel">
           <div className="delivery-wrapper">
-            {/* 지도 영역 */}
             <div className="driver-detail-map-area">
-              <DetailMap address="경인로 661 신도림1차푸르지오" />
+              {/* DetailMap 컴포넌트는 address 대신 residence 사용 */}
+              <DetailMap address={driver.residence} />
             </div>
 
             {/* 배송 목록 & 타임라인 */}
