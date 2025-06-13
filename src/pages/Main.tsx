@@ -1,26 +1,36 @@
+// src/pages/Main.tsx
 import React, { useState } from "react";
 import Sidebar from "../pages/Sidebar";
 import "../styles/Main.css";
 
 import DetailMap from "../components/DetailMap";
 
-const dummyDangerList = [
-  { id: 1, name: "홍길동", bpm: 190 },
-  { id: 2, name: "오아영", bpm: 188 },
+interface DangerDriver {
+  id: number;
+  name: string;
+  bpm: number;
+  address: string;
+}
+
+const dummyDangerList: DangerDriver[] = [
+  { id: 1, name: "홍길동", bpm: 190, address: "서울특별시 구로구 경인로 445" },
+  { id: 2, name: "오아영", bpm: 188, address: "서울특별시 동대문구 장한로 10" },
+  { id: 3, name: "김민수", bpm: 175, address: "서울특별시 성북구 종암로 10" },
 ];
 
 const Main: React.FC = () => {
-  const [hasDanger, setHasDanger] = useState(true);
-  const [dangerList] = useState(dummyDangerList);
+  const [hasDanger] = useState(true);
+  const [dangerList] = useState<DangerDriver[]>(dummyDangerList);
   const [selectedId, setSelectedId] = useState<number | null>(null);
 
-  const selectedDriver = dangerList.find((driver) => driver.id === selectedId);
+  const selectedDriver = dangerList.find((d) => d.id === selectedId);
 
   return (
     <div className="main-container">
       <Sidebar />
 
       <main className="main-content">
+        {/* 통계 카드 */}
         <div className="stats">
           <div className="stat-card">
             전체 기사 수<br />
@@ -44,11 +54,18 @@ const Main: React.FC = () => {
           </div>
         </div>
 
+        {/* 지도 + 위험 리스트 */}
         <div className="main-body">
           <div className="map-area">
+            {/* 이제 3개의 주소를 넘겨주므로 마커 3개가 뜹니다 */}
             <DetailMap
-              address="
-서울특별시 구로구 경인로 445"
+              addresses={dangerList.map((d) => d.address)}
+              level={4}
+              markerImageUrls={[
+                "/images/driverMarker.png",
+                "/images/dangerMarker.png", // 두 번째만 다른 아이콘
+                "/images/drivermarker.png",
+              ]}
             />
           </div>
 
@@ -60,8 +77,8 @@ const Main: React.FC = () => {
                     key={driver.id}
                     className={selectedId === driver.id ? "active" : ""}
                     onClick={() =>
-                      setSelectedId((prevId) =>
-                        prevId === driver.id ? null : driver.id
+                      setSelectedId((prev) =>
+                        prev === driver.id ? null : driver.id
                       )
                     }
                   >
@@ -81,7 +98,7 @@ const Main: React.FC = () => {
                     />
                     <div className="info">
                       <h3>{selectedDriver.name}</h3>
-                      <span>서울시, 구로동</span>
+                      <span>위치: {selectedDriver.address}</span>
                     </div>
                   </div>
 

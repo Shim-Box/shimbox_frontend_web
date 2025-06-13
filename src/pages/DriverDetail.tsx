@@ -102,7 +102,7 @@ const DriverDetail: React.FC = () => {
           <div className="delivery-wrapper">
             <div className="driver-detail-map-area">
               {/* DetailMap 컴포넌트는 address 대신 residence 사용 */}
-              <DetailMap address={driver.residence} />
+              <DetailMap addresses={[driver.residence]} level={3} />
             </div>
 
             {/* 배송 목록 & 타임라인 */}
