@@ -12,7 +12,6 @@ interface DetailMapProps {
 }
 
 function DetailMap({ address }: DetailMapProps) {
-  // center는 null 또는 { lat: number; lng: number } 두 가지 상태만 허용
   const [center, setCenter] = useState<{ lat: number; lng: number } | null>(
     null
   );
@@ -38,7 +37,6 @@ function DetailMap({ address }: DetailMapProps) {
 
   return (
     <div style={{ width: "100%", height: "100%" }}>
-      {/* center가 null이 아닐 때만 지도와 마커 렌더링 */}
       {center && (
         <KakaoMap
           center={center}
@@ -46,7 +44,6 @@ function DetailMap({ address }: DetailMapProps) {
           style={{ width: "100%", height: "100%" }}
           level={2}
         >
-          {/* isLoading이 false일 때만 마커 표시 */}
           {!isLoading && <MapMarker position={center} />}
         </KakaoMap>
       )}

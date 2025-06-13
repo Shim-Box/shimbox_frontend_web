@@ -1,88 +1,48 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useContext } from "react";
 import Sidebar from "../pages/Sidebar";
 import { useNavigate } from "react-router-dom";
 import "../styles/Manage.css";
+import { ApiService } from "../services/apiService";
+import { ApprovedUser } from "../models/AdminModels";
+import { AuthContext } from "../context/AuthContext";
 
-const allDrivers = [
-  {
-    id: 1,
-    name: "홍길동",
-    status: "출근",
-    area: "구로구",
-    time: "AM 11:00 - PM 08:00",
-    deliveries: "150 / 250",
-    condition: "위험",
-  },
-  {
-    id: 2,
-    name: "오아영",
-    status: "출근",
-    area: "구로구",
-    time: "AM 11:00 - PM 08:00",
-    deliveries: "150 / 250",
-    condition: "불안",
-  },
-  {
-    id: 3,
-    name: "김민수",
-    status: "퇴근",
-    area: "성북구",
-    time: "AM 11:00 - PM 08:00",
-    deliveries: "150 / 250",
-    condition: "불안",
-  },
-  {
-    id: 4,
-    name: "이수진",
-    status: "퇴근",
-    area: "구로구",
-    time: "AM 11:00 - PM 08:00",
-    deliveries: "150 / 250",
-    condition: "좋음",
-  },
-  {
-    id: 5,
-    name: "박지현",
-    status: "출근",
-    area: "성북구",
-    time: "AM 11:00 - PM 08:00",
-    deliveries: "150 / 250",
-    condition: "좋음",
-  },
-  {
-    id: 6,
-    name: "최영수",
-    status: "퇴근",
-    area: "성북구",
-    time: "AM 11:00 - PM 08:00",
-    deliveries: "150 / 250",
-    condition: "좋음",
-  },
-];
+interface Filters {
+  attendance: string;
+  residence: string;
+  conditionStatus: string;
+}
 
 const Manage: React.FC = () => {
   const navigate = useNavigate();
-  const [filters, setFilters] = useState({
-    status: "",
-    area: "",
-    condition: "",
-  });
-  const [filteredDrivers, setFilteredDrivers] = useState(allDrivers);
+  const { token } = useContext(AuthContext);
 
-  const handleFilterChange = (key: string, value: string) => {
-    setFilters((prev) => ({ ...prev, [key]: value }));
+  const [filters, setFilters] = useState<Filters>({
+    attendance: "",
+    residence: "",
+    conditionStatus: "",
+  });
+  const [drivers, setDrivers] = useState<ApprovedUser[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const loadApproved = async () => {
+    if (!token) return;
+    try {
+      setLoading(true);
+      const resp = await ApiService.fetchApprovedUsers(token, filters);
+      setDrivers(resp.data);
+    } catch (err) {
+      console.error("승인된 회원 목록 조회 실패", err);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleSearch = () => {
-    const filtered = allDrivers.filter((driver) => {
-      const matchStatus =
-        filters.status === "" || driver.status === filters.status;
-      const matchArea = filters.area === "" || driver.area === filters.area;
-      const matchCondition =
-        filters.condition === "" || driver.condition === filters.condition;
-      return matchStatus && matchArea && matchCondition;
-    });
-    setFilteredDrivers(filtered);
+  useEffect(() => {
+    loadApproved();
+  }, [token]);
+
+  const handleFilterChange = (key: keyof Filters, value: string) => {
+    setFilters((prev) => ({ ...prev, [key]: value }));
   };
 
   return (
@@ -92,85 +52,100 @@ const Manage: React.FC = () => {
       <div className="manage-page">
         <div className="manage-header">
           <div>
-            <h2>기사 목록</h2>
-            <p className="subtitle">위험도별</p>
+            <h2>기사 관제</h2>
+            <p className="subtitle">승인된 회원 목록</p>
           </div>
 
           <div className="filter-bar">
             <select
-              onChange={(e) => handleFilterChange("status", e.target.value)}
+              value={filters.attendance}
+              onChange={(e) => handleFilterChange("attendance", e.target.value)}
             >
               <option value="">근무상태</option>
               <option value="출근">출근</option>
               <option value="퇴근">퇴근</option>
             </select>
             <select
-              onChange={(e) => handleFilterChange("area", e.target.value)}
+              value={filters.residence}
+              onChange={(e) => handleFilterChange("residence", e.target.value)}
             >
               <option value="">근무지</option>
               <option value="구로구">구로구</option>
               <option value="성북구">성북구</option>
             </select>
             <select
-              onChange={(e) => handleFilterChange("condition", e.target.value)}
+              value={filters.conditionStatus}
+              onChange={(e) =>
+                handleFilterChange("conditionStatus", e.target.value)
+              }
             >
               <option value="">상태</option>
               <option value="위험">위험</option>
               <option value="불안">불안</option>
               <option value="좋음">좋음</option>
             </select>
-            <button className="search-btn" onClick={handleSearch}>
+            <button
+              className="search-btn"
+              onClick={loadApproved}
+              disabled={loading}
+            >
               검색
             </button>
           </div>
         </div>
 
-        <table className="manage-table">
-          <thead>
-            <tr>
-              <th>이름</th>
-              <th>근무상태</th>
-              <th>근무지</th>
-              <th>근무시간</th>
-              <th>배달건수</th>
-              <th>상태</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredDrivers.map((driver) => (
-              <tr
-                key={driver.id}
-                onClick={() => navigate(`/driver/${driver.id}`)}
-                style={{ cursor: "pointer" }}
-              >
-                <td>
-                  <img
-                    src="./images/PostDeliver.png"
-                    alt="프로필"
-                    className="driver-img"
-                  />
-                  {driver.name}
-                </td>
-                <td>
-                  <span
-                    className={`status-badge ${
-                      driver.status === "출근" ? "on" : "off"
-                    }`}
-                  >
-                    {driver.status}
-                  </span>
-                </td>
-                <td>{driver.area}</td>
-                <td>{driver.time}</td>
-                <td>{driver.deliveries}</td>
-                <td>
-                  <span className={`condition-dot ${driver.condition}`}>●</span>{" "}
-                  {driver.condition}
-                </td>
+        {loading ? (
+          <p>로딩 중...</p>
+        ) : (
+          <table className="manage-table">
+            <thead>
+              <tr>
+                <th>이름</th>
+                <th>근무상태</th>
+                <th>근무지</th>
+                <th>근무시간</th>
+                <th>배달건수</th>
+                <th>상태</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {drivers.map((d) => (
+                <tr
+                  key={d.id}
+                  onClick={() => navigate(`/driver/${d.id}`)}
+                  style={{ cursor: "pointer" }}
+                >
+                  <td>
+                    <img
+                      src={d.profileImageUrl || "/images/PostDeliver.png"}
+                      alt="프로필"
+                      className="driver-img"
+                    />
+                    {d.name}
+                  </td>
+                  <td>
+                    <span
+                      className={`status-badge ${
+                        d.attendance === "출근" ? "on" : "off"
+                      }`}
+                    >
+                      {d.attendance}
+                    </span>
+                  </td>
+                  <td>{d.residence}</td>
+                  <td>{d.workTime}</td>
+                  <td>{d.deliveryStats}</td>
+                  <td>
+                    <span className={`condition-dot ${d.conditionStatus}`}>
+                      ●
+                    </span>{" "}
+                    {d.conditionStatus}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
   );
