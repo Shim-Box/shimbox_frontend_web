@@ -2,33 +2,32 @@ import React, { useState, useEffect, useContext } from "react";
 import Sidebar from "../pages/Sidebar";
 import { useNavigate } from "react-router-dom";
 import "../styles/Manage.css";
+
 import { ApiService } from "../services/apiService";
 import { ApprovedUser } from "../models/AdminModels";
 import { AuthContext } from "../context/AuthContext";
 
 interface Filters {
-  attendance: string;
-  residence: string;
-  conditionStatus: string;
+  attendance?: string;
+  residence?: string;
+  conditionStatus?: string;
 }
 
 const Manage: React.FC = () => {
   const navigate = useNavigate();
   const { token } = useContext(AuthContext);
 
-  const [filters, setFilters] = useState<Filters>({
-    attendance: "",
-    residence: "",
-    conditionStatus: "",
-  });
+  const [filters, setFilters] = useState<Filters>({});
   const [drivers, setDrivers] = useState<ApprovedUser[]>([]);
   const [loading, setLoading] = useState(false);
 
   const loadApproved = async () => {
     if (!token) return;
+    setLoading(true);
     try {
-      setLoading(true);
+      // fetchApprovedUsers 는 unwrap 되어 PaginatedResponse<ApprovedUser>를 반환
       const resp = await ApiService.fetchApprovedUsers(token, filters);
+      // 내부 기사 배열은 resp.data (PaginatedResponse.data)
       setDrivers(resp.data);
     } catch (err) {
       console.error("승인된 회원 목록 조회 실패", err);
@@ -37,9 +36,10 @@ const Manage: React.FC = () => {
     }
   };
 
+  // filters 변경 시에도 재조회하도록 의존성에 추가
   useEffect(() => {
     loadApproved();
-  }, [token]);
+  }, [token, filters]);
 
   const handleFilterChange = (key: keyof Filters, value: string) => {
     setFilters((prev) => ({ ...prev, [key]: value }));
@@ -58,24 +58,26 @@ const Manage: React.FC = () => {
 
           <div className="filter-bar">
             <select
-              value={filters.attendance}
+              value={filters.attendance || ""}
               onChange={(e) => handleFilterChange("attendance", e.target.value)}
             >
               <option value="">근무상태</option>
-              <option value="출근전">출근전</option>
+              <option value="출근">출근</option>
               <option value="퇴근">퇴근</option>
             </select>
             <select
-              value={filters.residence}
+              value={filters.residence || ""}
               onChange={(e) => handleFilterChange("residence", e.target.value)}
             >
               <option value="">근무지</option>
-              <option value="구로구">구로구</option>
               <option value="강남구">강남구</option>
+              <option value="구로구">구로구</option>
+              <option value="동대문구">동대문구</option>
+              <option value="성북구">성북구</option>
               <option value="종로구">종로구</option>
             </select>
             <select
-              value={filters.conditionStatus}
+              value={filters.conditionStatus || ""}
               onChange={(e) =>
                 handleFilterChange("conditionStatus", e.target.value)
               }
@@ -112,8 +114,8 @@ const Manage: React.FC = () => {
             <tbody>
               {drivers.map((d) => (
                 <tr
-                  key={d.id}
-                  onClick={() => navigate(`/driver/${d.id}`)}
+                  key={d.driverId}
+                  onClick={() => navigate(`/driver/${d.driverId}`)}
                   style={{ cursor: "pointer" }}
                 >
                   <td>

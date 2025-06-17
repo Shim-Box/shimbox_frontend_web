@@ -6,6 +6,8 @@ import {
   AuthTokens,
   PendingUser,
   ApprovedUser,
+  DriverHealthData,
+  DriverRealtimeData,
 } from "../models/AdminModels";
 import { PaginatedResponse } from "../models/PaginatedResponse";
 import { SignupData } from "../models/SignupData";
@@ -73,6 +75,24 @@ export const ApiService = {
           params: filters,
           headers: { Authorization: `Bearer ${token}` },
         }
+      )
+      .then(unwrap);
+  },
+
+  fetchDriverHealth(driverId: number, token: string) {
+    return client
+      .get<ApiResponse<DriverHealthData>>(
+        `/api/v1/admin/driver/health/${driverId}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      )
+      .then(unwrap);
+  },
+
+  fetchDriverRealtime(driverId: number, token: string) {
+    return client
+      .get<ApiResponse<DriverRealtimeData>>(
+        `/api/v1/admin/driver/realtime/${driverId}`,
+        { headers: { Authorization: `Bearer ${token}` } }
       )
       .then(unwrap);
   },

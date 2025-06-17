@@ -7,27 +7,28 @@ declare global {
   }
 }
 
-interface DetailMapProps {
+export interface DetailMapProps {
   addresses: string[];
   level?: number;
-  markerImageUrl?: string;
   markerImageUrls?: string[];
   markerSize?: { width: number; height: number };
-  onMarkerClick?: (index: number) => void; // 클릭 시 콜백
+  onMarkerClick?: (idx: number) => void;
 }
 
 const DetailMap: React.FC<DetailMapProps> = ({
   addresses,
-  level = 3,
-  markerImageUrl,
+  level = 8, // 초기 줌 레벨 (약 2km 범위)
   markerImageUrls,
-  markerSize = { width: 40, height: 40 },
+  markerSize = { width: 35, height: 45 },
   onMarkerClick,
 }) => {
   const [centers, setCenters] = useState<{ lat: number; lng: number }[]>([]);
 
   useEffect(() => {
-    if (!window.kakao?.maps) return;
+    if (!window.kakao?.maps) {
+      console.error("카카오 지도 SDK가 로드되지 않았습니다.");
+      return;
+    }
     const geocoder = new window.kakao.maps.services.Geocoder();
     Promise.all(
       addresses.map(
@@ -38,15 +39,17 @@ const DetailMap: React.FC<DetailMapProps> = ({
                 const { x, y } = res[0];
                 resolve({ lat: parseFloat(y), lng: parseFloat(x) });
               } else {
-                console.error(`주소 검색 실패 (${addr}):`, status);
+                console.warn(`주소 검색 실패 (${addr}):`, status);
+                // 실패 시 지도 기본 중심으로
                 resolve({ lat: 37.5665, lng: 126.978 });
               }
             });
           })
       )
-    ).then((locations) => setCenters(locations));
+    ).then((locs) => setCenters(locs));
   }, [addresses]);
 
+  // 첫 번째 좌표를 중심으로 사용
   const center = centers[0] || { lat: 37.5665, lng: 126.978 };
 
   return (
@@ -54,17 +57,17 @@ const DetailMap: React.FC<DetailMapProps> = ({
       <KakaoMap
         center={center}
         isPanto
-        style={{ width: "100%", height: "100%" }}
         level={level}
+        style={{ width: "100%", height: "100%" }}
       >
         {centers.map((c, idx) => {
-          const src = markerImageUrls ? markerImageUrls[idx] : markerImageUrl;
+          const src = markerImageUrls ? markerImageUrls[idx] : undefined;
           return (
             <MapMarker
               key={idx}
               position={c}
               image={src ? { src, size: markerSize } : undefined}
-              onClick={() => onMarkerClick?.(idx)} // 클릭 핸들러
+              onClick={() => onMarkerClick && onMarkerClick(idx)}
             />
           );
         })}

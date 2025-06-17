@@ -1,11 +1,10 @@
-// src/pages/DriverDetail.tsx
 import React, { useState, useEffect, useContext } from "react";
 import { useParams } from "react-router-dom";
 import Sidebar from "../pages/Sidebar";
 import "../styles/DriverDetail.css";
 import DetailMap from "../components/DetailMap";
 import { ApiService } from "../services/apiService";
-import { ApprovedUser } from "../models/AdminModels";
+import { ApprovedUser, DriverHealthData } from "../models/AdminModels";
 import { AuthContext } from "../context/AuthContext";
 
 const DriverDetail: React.FC = () => {
@@ -13,27 +12,45 @@ const DriverDetail: React.FC = () => {
   const { token } = useContext(AuthContext);
 
   const [driver, setDriver] = useState<ApprovedUser | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [health, setHealth] = useState<DriverHealthData | null>(null);
+  const [loadingDriver, setLoadingDriver] = useState(true);
+  const [loadingHealth, setLoadingHealth] = useState(false);
 
+  // 1) 기사 기본 정보 조회
   useEffect(() => {
     if (!token) return;
-    setLoading(true);
+    setLoadingDriver(true);
     ApiService.fetchApprovedUsers(token, { page: 1, size: 1000 })
-      .then((resp) => {
-        // resp.data.items 는 ApprovedUser[]
-        const found = resp.data.find((d) => d.id === Number(id));
+      .then((resp: { data: ApprovedUser[] }) => {
+        const found = resp.data.find((d) => d.driverId === Number(id));
         setDriver(found ?? null);
       })
-      .catch((err) => console.error("기사 상세 조회 실패", err))
-      .finally(() => setLoading(false));
+      .catch((err) => {
+        console.error("기사 상세 조회 실패", err);
+        setDriver(null);
+      })
+      .finally(() => setLoadingDriver(false));
   }, [token, id]);
 
-  if (loading) {
+  // 2) 퇴근 상태인 경우에만 '건강 데이터' 조회
+  useEffect(() => {
+    if (!token || !driver || driver.attendance !== "퇴근") return;
+    setLoadingHealth(true);
+    ApiService.fetchDriverHealth(driver.driverId, token)
+      .then((data) => setHealth(data))
+      .catch((err) => {
+        console.error("건강 데이터 조회 실패", err);
+        setHealth(null);
+      })
+      .finally(() => setLoadingHealth(false));
+  }, [token, driver]);
+
+  if (loadingDriver) {
     return (
       <div className="driver-layout">
         <Sidebar />
         <div className="driver-detail-container">
-          <p>로딩 중...</p>
+          <p>기사 정보를 불러오는 중...</p>
         </div>
       </div>
     );
@@ -54,7 +71,7 @@ const DriverDetail: React.FC = () => {
     <div className="driver-layout">
       <Sidebar />
       <div className="driver-detail-container">
-        {/* 왼쪽 프로필 카드 */}
+        {/* 왼쪽 패널: 프로필 카드 + (퇴근 시) 건강 카드 */}
         <section className="left-panel">
           <div className="profile-card">
             <img
@@ -64,7 +81,6 @@ const DriverDetail: React.FC = () => {
             />
             <h3>{driver.name}</h3>
             <p className="position">택배기사</p>
-
             <p>거주지: {driver.residence}</p>
             <p>담당지: {driver.residence}</p>
             <p>
@@ -77,6 +93,21 @@ const DriverDetail: React.FC = () => {
                 {driver.attendance}
               </strong>
             </p>
+            {/* 출근/퇴근 시간은 health 데이터가 있을 때만 */}
+            {health && (
+              <>
+                <p>
+                  출근:{" "}
+                  <strong>{new Date(health.workTime).toLocaleString()}</strong>
+                </p>
+                <p>
+                  퇴근:{" "}
+                  <strong>
+                    {new Date(health.leaveWorkTime).toLocaleString()}
+                  </strong>
+                </p>
+              </>
+            )}
             <p>
               위험 지수:{" "}
               <span className={`condition-dot ${driver.conditionStatus}`}>
@@ -86,22 +117,39 @@ const DriverDetail: React.FC = () => {
             </p>
           </div>
 
-          {/* 아직 API가 없어서 플래이스홀더 */}
-          <div className="health-card">
-            <p>
-              💓 심박수: <strong>88 bpm</strong>
-            </p>
-            <p>
-              🥕 걸음수: <strong>5,240 걸음</strong>
-            </p>
-          </div>
+          {/* 퇴근 상태일 때만 health-card 렌더링 */}
+          {driver.attendance === "퇴근" && (
+            <div className="health-card">
+              {loadingHealth ? (
+                <p>건강 데이터를 불러오는 중...</p>
+              ) : health ? (
+                <>
+                  <p>
+                    💓 심박수: <strong>{health.heartRate} bpm</strong>
+                  </p>
+                  <p>
+                    🥕 걸음수:{" "}
+                    <strong>{health.step.toLocaleString()} 걸음</strong>
+                  </p>
+                  <p>
+                    상태:{" "}
+                    <span className={`condition-dot ${health.conditionStatus}`}>
+                      ●
+                    </span>{" "}
+                    {health.conditionStatus}
+                  </p>
+                </>
+              ) : (
+                <p>건강 데이터를 가져올 수 없습니다.</p>
+              )}
+            </div>
+          )}
         </section>
 
-        {/* 중앙 지도 & 배송 부분 */}
+        {/* 중앙 패널: 지도 및 배송 정보 */}
         <section className="center-panel">
           <div className="delivery-wrapper">
             <div className="driver-detail-map-area">
-              {/* DetailMap 컴포넌트는 address 대신 residence 사용 */}
               <DetailMap addresses={[driver.residence]} level={3} />
             </div>
 
@@ -148,9 +196,7 @@ const DriverDetail: React.FC = () => {
                   </li>
                   <li>
                     <span className="check">✔</span> 11:50 배송지 도착
-                    <div className="desc">
-                      기사가 상품 적재를 완료하였습니다
-                    </div>
+                    <div className="desc">상품 적재 완료</div>
                   </li>
                   <li>
                     <span className="check">✔</span> 배송 대기
