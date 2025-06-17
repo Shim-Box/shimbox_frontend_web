@@ -1,10 +1,15 @@
+// src/pages/DriverDetail.tsx
 import React, { useState, useEffect, useContext } from "react";
 import { useParams } from "react-router-dom";
 import Sidebar from "../pages/Sidebar";
 import "../styles/DriverDetail.css";
 import DetailMap from "../components/DetailMap";
 import { ApiService } from "../services/apiService";
-import { ApprovedUser, DriverHealthData } from "../models/AdminModels";
+import {
+  ApprovedUser,
+  DriverHealthData,
+  DeliveryItem,
+} from "../models/AdminModels";
 import { AuthContext } from "../context/AuthContext";
 
 const DriverDetail: React.FC = () => {
@@ -13,15 +18,22 @@ const DriverDetail: React.FC = () => {
 
   const [driver, setDriver] = useState<ApprovedUser | null>(null);
   const [health, setHealth] = useState<DriverHealthData | null>(null);
+  const [ongoing, setOngoing] = useState<DeliveryItem[]>([]);
+  const [completed, setCompleted] = useState<DeliveryItem[]>([]);
+  const [activeTab, setActiveTab] = useState<"ONGOING" | "COMPLETED">(
+    "ONGOING"
+  );
   const [loadingDriver, setLoadingDriver] = useState(true);
   const [loadingHealth, setLoadingHealth] = useState(false);
+  const [loadingOngoing, setLoadingOngoing] = useState(false);
+  const [loadingCompleted, setLoadingCompleted] = useState(false);
 
   // 1) 기사 기본 정보 조회
   useEffect(() => {
     if (!token) return;
     setLoadingDriver(true);
     ApiService.fetchApprovedUsers(token, { page: 1, size: 1000 })
-      .then((resp: { data: ApprovedUser[] }) => {
+      .then((resp) => {
         const found = resp.data.find((d) => d.driverId === Number(id));
         setDriver(found ?? null);
       })
@@ -32,7 +44,7 @@ const DriverDetail: React.FC = () => {
       .finally(() => setLoadingDriver(false));
   }, [token, id]);
 
-  // 2) 퇴근 상태인 경우에만 '건강 데이터' 조회
+  // 2) 건강 데이터 조회 (퇴근 시에만)
   useEffect(() => {
     if (!token || !driver || driver.attendance !== "퇴근") return;
     setLoadingHealth(true);
@@ -45,6 +57,32 @@ const DriverDetail: React.FC = () => {
       .finally(() => setLoadingHealth(false));
   }, [token, driver]);
 
+  // 3) 배송중 상품 조회
+  useEffect(() => {
+    if (!token || !driver) return;
+    setLoadingOngoing(true);
+    ApiService.fetchDriverOngoingProducts(driver.driverId, token)
+      .then((list) => setOngoing(list))
+      .catch((err) => {
+        console.error("배송중 상품 조회 실패", err);
+        setOngoing([]);
+      })
+      .finally(() => setLoadingOngoing(false));
+  }, [token, driver]);
+
+  // 4) 배송완료 상품 조회
+  useEffect(() => {
+    if (!token || !driver) return;
+    setLoadingCompleted(true);
+    ApiService.fetchDriverCompletedProducts(driver.driverId, token)
+      .then((list) => setCompleted(list))
+      .catch((err) => {
+        console.error("배송완료 상품 조회 실패", err);
+        setCompleted([]);
+      })
+      .finally(() => setLoadingCompleted(false));
+  }, [token, driver]);
+
   if (loadingDriver) {
     return (
       <div className="driver-layout">
@@ -55,7 +93,6 @@ const DriverDetail: React.FC = () => {
       </div>
     );
   }
-
   if (!driver) {
     return (
       <div className="driver-layout">
@@ -67,11 +104,15 @@ const DriverDetail: React.FC = () => {
     );
   }
 
+  const currentList = activeTab === "ONGOING" ? ongoing : completed;
+  const loadingCurrent =
+    activeTab === "ONGOING" ? loadingOngoing : loadingCompleted;
+
   return (
     <div className="driver-layout">
       <Sidebar />
       <div className="driver-detail-container">
-        {/* 왼쪽 패널: 프로필 카드 + (퇴근 시) 건강 카드 */}
+        {/* 왼쪽 패널: 프로필 + 건강 */}
         <section className="left-panel">
           <div className="profile-card">
             <img
@@ -84,7 +125,7 @@ const DriverDetail: React.FC = () => {
             <p>거주지: {driver.residence}</p>
             <p>담당지: {driver.residence}</p>
             <p>
-              근무상태:{" "}
+              근무상태:&nbsp;
               <strong
                 className={`status-badge ${
                   driver.attendance === "출근" ? "on" : "off"
@@ -93,7 +134,6 @@ const DriverDetail: React.FC = () => {
                 {driver.attendance}
               </strong>
             </p>
-            {/* 출근/퇴근 시간은 health 데이터가 있을 때만 */}
             {health && (
               <>
                 <p>
@@ -109,15 +149,15 @@ const DriverDetail: React.FC = () => {
               </>
             )}
             <p>
-              위험 지수:{" "}
+              위험 지수:&nbsp;
               <span className={`condition-dot ${driver.conditionStatus}`}>
                 ●
-              </span>{" "}
+              </span>
+              &nbsp;
               {driver.conditionStatus}
             </p>
           </div>
 
-          {/* 퇴근 상태일 때만 health-card 렌더링 */}
           {driver.attendance === "퇴근" && (
             <div className="health-card">
               {loadingHealth ? (
@@ -132,10 +172,11 @@ const DriverDetail: React.FC = () => {
                     <strong>{health.step.toLocaleString()} 걸음</strong>
                   </p>
                   <p>
-                    상태:{" "}
+                    상태:&nbsp;
                     <span className={`condition-dot ${health.conditionStatus}`}>
                       ●
-                    </span>{" "}
+                    </span>
+                    &nbsp;
                     {health.conditionStatus}
                   </p>
                 </>
@@ -146,37 +187,67 @@ const DriverDetail: React.FC = () => {
           )}
         </section>
 
-        {/* 중앙 패널: 지도 및 배송 정보 */}
+        {/* 중앙 패널: 지도 및 배송 목록 */}
         <section className="center-panel">
           <div className="delivery-wrapper">
             <div className="driver-detail-map-area">
               <DetailMap addresses={[driver.residence]} level={3} />
             </div>
 
-            {/* 배송 목록 & 타임라인 */}
             <div className="delivery-bottom-section">
               <div className="delivery-list">
                 <h4>
-                  배송 목록 <span className="count">10/50</span>
+                  배송 목록&nbsp;
+                  <span className="count">
+                    {activeTab === "ONGOING"
+                      ? ongoing.length
+                      : completed.length}
+                  </span>
                 </h4>
+
                 <div className="tabs">
-                  <span className="tab">완료</span>
-                  <span className="tab active">진행 중</span>
+                  <span
+                    className={`tab ${activeTab === "ONGOING" ? "active" : ""}`}
+                    onClick={() => setActiveTab("ONGOING")}
+                  >
+                    진행 중
+                  </span>
+                  <span
+                    className={`tab ${
+                      activeTab === "COMPLETED" ? "active" : ""
+                    }`}
+                    onClick={() => setActiveTab("COMPLETED")}
+                  >
+                    완료
+                  </span>
                 </div>
 
-                <div className="delivery-card">
-                  <p className="address">신도림동 푸르지오 103동 902호</p>
-                  <p className="summary">배송 건수: 4건</p>
-                  <p className="status">배송 진행 중</p>
-                  <button className="view-button">상세 보기</button>
-                </div>
-
-                <div className="delivery-card">
-                  <p className="address">신도림동 푸르지오 103동 1002호</p>
-                  <p className="summary">배송 건수: 1건</p>
-                  <p className="status">배송 진행 중</p>
-                  <button className="view-button">상세 보기</button>
-                </div>
+                {loadingCurrent ? (
+                  <p>목록을 불러오는 중...</p>
+                ) : currentList.length === 0 ? (
+                  <p>
+                    {activeTab === "ONGOING"
+                      ? "진행 중인 배송이 없습니다."
+                      : "완료된 배송이 없습니다."}
+                  </p>
+                ) : (
+                  currentList.map((item) => (
+                    <div key={item.productId} className="delivery-card">
+                      <p className="address">
+                        {item.address} {item.detailAddress}
+                        <br />
+                        <small>({item.postalCode})</small>
+                      </p>
+                      <p className="summary">
+                        상품명: {item.productName}
+                        <br />
+                        수취인: {item.recipientName} (
+                        {item.recipientPhoneNumber})
+                      </p>
+                      <p className="status">{item.shippingStatus}</p>
+                    </div>
+                  ))
+                )}
               </div>
 
               <div className="right-panel">

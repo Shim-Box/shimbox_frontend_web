@@ -8,6 +8,7 @@ import {
   ApprovedUser,
   DriverHealthData,
   DriverRealtimeData,
+  DeliveryItem,
 } from "../models/AdminModels";
 import { PaginatedResponse } from "../models/PaginatedResponse";
 import { SignupData } from "../models/SignupData";
@@ -92,6 +93,43 @@ export const ApiService = {
     return client
       .get<ApiResponse<DriverRealtimeData>>(
         `/api/v1/admin/driver/realtime/${driverId}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      )
+      .then(unwrap);
+  },
+
+  // 배송 중인 상품 목록
+  fetchDriverDelivering(driverId: number, token: string) {
+    return client
+      .get<ApiResponse<DeliveryItem[]>>(
+        `/api/v1/admin/driver/product/${driverId}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      )
+      .then(unwrap);
+  },
+
+  // 배송 완료된 상품 목록
+  fetchDriverCompleted(driverId: number, token: string) {
+    return client
+      .get<ApiResponse<DeliveryItem[]>>(
+        `/api/v1/admin/driver/complete/${driverId}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      )
+      .then(unwrap);
+  },
+
+  fetchDriverOngoingProducts(driverId: number, token: string) {
+    return client
+      .get<ApiResponse<DeliveryItem[]>>(
+        `/api/v1/admin/driver/product/${driverId}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      )
+      .then(unwrap);
+  },
+  fetchDriverCompletedProducts(driverId: number, token: string) {
+    return client
+      .get<ApiResponse<DeliveryItem[]>>(
+        `/api/v1/admin/driver/complete/${driverId}`,
         { headers: { Authorization: `Bearer ${token}` } }
       )
       .then(unwrap);

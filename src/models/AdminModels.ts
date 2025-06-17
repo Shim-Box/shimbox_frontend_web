@@ -66,3 +66,15 @@ export interface DriverRealtimeData {
   conditionStatus: string;
   modifiedDate: string;
 }
+
+export interface DeliveryItem {
+  productId: number;
+  productName: string;
+  recipientName: string;
+  recipientPhoneNumber: string;
+  address: string;
+  detailAddress: string;
+  postalCode: string;
+  deliveryImageUrl: string;
+  shippingStatus: string;
+}
