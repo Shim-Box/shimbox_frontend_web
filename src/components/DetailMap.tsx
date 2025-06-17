@@ -10,11 +10,10 @@ declare global {
 interface DetailMapProps {
   addresses: string[];
   level?: number;
-  /** 단일 URL 또는 각 마커별 배열 길이와 같은 배열로 전달 */
   markerImageUrl?: string;
   markerImageUrls?: string[];
-  /** 마커 아이콘 크기 (width, height) */
   markerSize?: { width: number; height: number };
+  onMarkerClick?: (index: number) => void; // 클릭 시 콜백
 }
 
 const DetailMap: React.FC<DetailMapProps> = ({
@@ -22,17 +21,14 @@ const DetailMap: React.FC<DetailMapProps> = ({
   level = 3,
   markerImageUrl,
   markerImageUrls,
-  markerSize = { width: 30, height: 40 },
+  markerSize = { width: 40, height: 40 },
+  onMarkerClick,
 }) => {
   const [centers, setCenters] = useState<{ lat: number; lng: number }[]>([]);
 
   useEffect(() => {
-    if (!window.kakao || !window.kakao.maps) {
-      console.error("카카오 지도 SDK가 로드되지 않았습니다.");
-      return;
-    }
+    if (!window.kakao?.maps) return;
     const geocoder = new window.kakao.maps.services.Geocoder();
-
     Promise.all(
       addresses.map(
         (addr) =>
@@ -62,20 +58,13 @@ const DetailMap: React.FC<DetailMapProps> = ({
         level={level}
       >
         {centers.map((c, idx) => {
-          // 각 마커별 이미지 URL 선택
           const src = markerImageUrls ? markerImageUrls[idx] : markerImageUrl;
           return (
             <MapMarker
               key={idx}
               position={c}
-              image={
-                src
-                  ? {
-                      src,
-                      size: markerSize,
-                    }
-                  : undefined
-              }
+              image={src ? { src, size: markerSize } : undefined}
+              onClick={() => onMarkerClick?.(idx)} // 클릭 핸들러
             />
           );
         })}
