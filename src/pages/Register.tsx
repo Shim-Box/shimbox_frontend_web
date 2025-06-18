@@ -12,7 +12,6 @@ const Register: React.FC = () => {
   const [checkedIds, setCheckedIds] = useState<number[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // 1) 대기자 목록 불러오기
   const loadPending = async () => {
     if (!token) return;
     try {
@@ -32,21 +31,19 @@ const Register: React.FC = () => {
     loadPending();
   }, [token]);
 
-  // 2) 체크박스 토글
   const toggleCheckbox = (id: number) => {
     setCheckedIds((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
     );
   };
 
-  // 3) 승인 버튼 핸들러
   const handleApprove = async () => {
     if (!token || checkedIds.length === 0) return;
     try {
       await ApiService.approveUsers(checkedIds, token);
       setCheckedIds([]);
       setExpandedId(null);
-      await loadPending(); // 승인 후 목록 갱신
+      await loadPending();
     } catch (err) {
       console.error("기사 승인 실패", err);
     }
@@ -132,7 +129,7 @@ const Register: React.FC = () => {
                   {expandedId === driver.id && (
                     <tr className="detail-row">
                       <td colSpan={6}>
-                        <div className="detail-box">
+                        <div className={`detail-box ${driver.career === "초보자" ? "hide-average" : ""}`}>
                           <div>
                             <strong>생년월일</strong>
                             <br />

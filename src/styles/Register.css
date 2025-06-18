@@ -78,3 +78,9 @@
   border-radius: 50%;
   margin-right: 6px;
 }
+
+/* 초보자 경력일 때 평균 항목 숨기기 */
+.hide-average div:nth-child(3),
+.hide-average div:nth-child(4) {
+  display: none;
+}
