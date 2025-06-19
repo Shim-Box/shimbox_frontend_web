@@ -20,7 +20,8 @@ import DriverDetail from "./pages/DriverDetail";
  * 아니면 /login 으로 리다이렉트.
  */
 const PrivateRoute: React.FC = () => {
-  const { isLoggedIn } = useContext(AuthContext);
+  const { isLoggedIn, loading } = useContext(AuthContext);
+  if (loading) return null; // 토큰 로딩 전에는 아무것도 안 보여줌
   return isLoggedIn ? <Outlet /> : <Navigate to="/login" replace />;
 };
 
@@ -30,17 +31,13 @@ function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Navigate to="/login" replace />} />
-
           <Route path="/login" element={<Login />} />
-
           <Route path="/register" element={<Register />} />
-
           <Route element={<PrivateRoute />}>
             <Route path="/main" element={<Main />} />
             <Route path="/manage" element={<Manage />} />
             <Route path="/driver/:id" element={<DriverDetail />} />
           </Route>
-
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
       </BrowserRouter>

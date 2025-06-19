@@ -4,41 +4,43 @@ interface AuthContextType {
   token: string | null;
   isLoggedIn: boolean;
   setToken: (token: string | null) => void;
+  loading: boolean;
 }
 
 export const AuthContext = createContext<AuthContextType>({
   token: null,
   isLoggedIn: false,
   setToken: () => {},
+  loading: true,
 });
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({
   children,
 }) => {
   const [token, setTokenState] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  // 초기 렌더 시 sessionStorage에서 토큰이 있으면 상태에 반영
   useEffect(() => {
-    const saved = sessionStorage.getItem("monitorToken");
+    const saved = localStorage.getItem("monitorToken");
     if (saved) {
       setTokenState(saved);
     }
+    setLoading(false);
   }, []);
 
-  // 토큰을 변경할 때마다 sessionStorage에도 저장/제거
   const setToken = (newToken: string | null) => {
     if (newToken) {
-      sessionStorage.setItem("monitorToken", newToken);
+      localStorage.setItem("monitorToken", newToken);
       setTokenState(newToken);
     } else {
-      sessionStorage.removeItem("monitorToken");
+      localStorage.removeItem("monitorToken");
       setTokenState(null);
     }
   };
 
   return (
     <AuthContext.Provider
-      value={{ token, isLoggedIn: Boolean(token), setToken }}
+      value={{ token, isLoggedIn: Boolean(token), setToken, loading }}
     >
       {children}
     </AuthContext.Provider>
