@@ -25,9 +25,7 @@ const Manage: React.FC = () => {
     if (!token) return;
     setLoading(true);
     try {
-      // fetchApprovedUsers 는 unwrap 되어 PaginatedResponse<ApprovedUser>를 반환
       const resp = await ApiService.fetchApprovedUsers(token, filters);
-      // 내부 기사 배열은 resp.data (PaginatedResponse.data)
       setDrivers(resp.data);
     } catch (err) {
       console.error("승인된 회원 목록 조회 실패", err);
@@ -36,7 +34,6 @@ const Manage: React.FC = () => {
     }
   };
 
-  // filters 변경 시에도 재조회하도록 의존성에 추가
   useEffect(() => {
     loadApproved();
   }, [token, filters]);
