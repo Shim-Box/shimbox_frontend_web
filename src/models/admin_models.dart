@@ -1,5 +1,3 @@
-// lib/models/admin_models.dart
-
 /// 관리자 가입 성공 시 반환되는 data.id, email, role
 class AdminSignupData {
   final int id;

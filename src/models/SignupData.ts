@@ -1,4 +1,3 @@
-// src/models/SignupData.ts
 export class SignupData {
   email?: string;
   password?: string;
