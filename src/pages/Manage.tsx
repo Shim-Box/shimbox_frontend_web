@@ -6,6 +6,7 @@ import "../styles/Manage.css";
 import { ApiService } from "../services/apiService";
 import { ApprovedUser } from "../models/AdminModels";
 import { AuthContext } from "../context/AuthContext";
+import Footer, { FooterFilters } from "../pages/Footer";
 
 interface Filters {
   attendance?: string;
@@ -18,6 +19,7 @@ const Manage: React.FC = () => {
   const { token } = useContext(AuthContext);
 
   const [filters, setFilters] = useState<Filters>({});
+  const [nameQuery, setNameQuery] = useState<string>("");
   const [drivers, setDrivers] = useState<ApprovedUser[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -26,7 +28,14 @@ const Manage: React.FC = () => {
     setLoading(true);
     try {
       const resp = await ApiService.fetchApprovedUsers(token, filters);
-      setDrivers(resp.data);
+      let list = resp.data ?? [];
+
+      if (nameQuery) {
+        const q = nameQuery.trim();
+        list = list.filter((d) => d.name?.includes(q));
+      }
+
+      setDrivers(list);
     } catch (err) {
       console.error("승인된 회원 목록 조회 실패", err);
     } finally {
@@ -36,10 +45,19 @@ const Manage: React.FC = () => {
 
   useEffect(() => {
     loadApproved();
-  }, [token, filters]);
+  }, [token, filters, nameQuery]);
 
   const handleFilterChange = (key: keyof Filters, value: string) => {
-    setFilters((prev) => ({ ...prev, [key]: value }));
+    setFilters((prev) => ({ ...prev, [key]: value || undefined }));
+  };
+
+  const handleFooterSearch = (ff: FooterFilters, nq?: string) => {
+    setFilters({
+      attendance: ff.attendance,
+      residence: ff.residence,
+      conditionStatus: ff.conditionStatus,
+    });
+    setNameQuery(nq || "");
   };
 
   return (
@@ -59,9 +77,11 @@ const Manage: React.FC = () => {
               onChange={(e) => handleFilterChange("attendance", e.target.value)}
             >
               <option value="">근무상태</option>
+              <option value="출근전">출근전</option>
               <option value="출근">출근</option>
               <option value="퇴근">퇴근</option>
             </select>
+
             <select
               value={filters.residence || ""}
               onChange={(e) => handleFilterChange("residence", e.target.value)}
@@ -73,6 +93,7 @@ const Manage: React.FC = () => {
               <option value="성북구">성북구</option>
               <option value="종로구">종로구</option>
             </select>
+
             <select
               value={filters.conditionStatus || ""}
               onChange={(e) =>
@@ -84,6 +105,7 @@ const Manage: React.FC = () => {
               <option value="불안">불안</option>
               <option value="좋음">좋음</option>
             </select>
+
             <button
               className="search-btn"
               onClick={loadApproved}
@@ -115,7 +137,7 @@ const Manage: React.FC = () => {
                   onClick={() => navigate(`/driver/${d.driverId}`)}
                   style={{ cursor: "pointer" }}
                 >
-                  <td>
+                  <td className="driver-name">
                     <img
                       src={d.profileImageUrl || "/images/PostDeliver.png"}
                       alt="프로필"
@@ -147,6 +169,8 @@ const Manage: React.FC = () => {
           </table>
         )}
       </div>
+
+      <Footer onSearch={handleFooterSearch} />
     </div>
   );
 };

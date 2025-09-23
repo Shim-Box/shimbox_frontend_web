@@ -1,10 +1,12 @@
 import React, { useEffect, useMemo, useState, useContext } from "react";
+import { useNavigate } from "react-router-dom";
 import Sidebar from "../pages/Sidebar";
 import "../styles/Main.css";
 import DetailMap from "../components/DetailMap";
 import { ApiService } from "../services/apiService";
 import { ApprovedUser } from "../models/AdminModels";
 import { AuthContext } from "../context/AuthContext";
+import Footer, { FooterFilters } from "../pages/Footer";
 
 interface DangerDriver {
   id: number;
@@ -22,6 +24,7 @@ const dummyDangerList: DangerDriver[] = [
 
 const Main: React.FC = () => {
   const { token } = useContext(AuthContext);
+  const navigate = useNavigate();
 
   // 통계 상태
   const [totalApproved, setTotalApproved] = useState<number>(0);
@@ -62,21 +65,24 @@ const Main: React.FC = () => {
       try {
         setLoadingStats(true);
 
-        //승인된 기사 목록 가져오기
+        // 승인된 기사 목록 가져오기
         const approved = await ApiService.fetchApprovedUsers(token, {
           page: 1,
           size: 1000,
         });
 
         const list: ApprovedUser[] = approved.data ?? [];
+
+        // 전체 기사 수: 응답에 totalElements가 있으면 그 값, 없으면 목록 길이
         const approvedCount =
-          typeof approved.totalElements === "number"
-            ? approved.totalElements
+          typeof (approved as any).totalElements === "number"
+            ? (approved as any).totalElements
             : list.length;
 
+        // 현재 배송 중(=출근) 기사 수
         const onDuty = list.filter((d) => d.attendance === "출근").length;
 
-        //기사별 완료 목록 합산
+        // 기사별 "배송완료" 목록 합산
         const completedCounts = await Promise.all(
           list.map(async (d) => {
             try {
@@ -90,7 +96,6 @@ const Main: React.FC = () => {
             }
           })
         );
-
         const completedSum = completedCounts.reduce((acc, n) => acc + n, 0);
 
         if (!mounted) return;
@@ -102,7 +107,6 @@ const Main: React.FC = () => {
         setTotalApproved(0);
         setOnDutyCount(0);
         setTotalCompleted(0);
-
         console.error("메인 통계 로딩 실패:", e);
       } finally {
         if (mounted) setLoadingStats(false);
@@ -113,6 +117,11 @@ const Main: React.FC = () => {
       mounted = false;
     };
   }, [token]);
+
+  // Footer 검색 → Manage로 이동
+  const handleFooterSearch = (ff: FooterFilters, nq?: string) => {
+    navigate("/manage", { state: { ff, nq } });
+  };
 
   return (
     <div className="main-container">
@@ -147,12 +156,11 @@ const Main: React.FC = () => {
 
           {/* 경고 카드: 클릭/키보드로 상세 토글 */}
           <div
-            className="stat-card warning"
+            className={`stat-card warning${hasDanger ? " clickable" : ""}`}
             role="button"
             tabIndex={0}
             onClick={toggleDangerDetailFromStatCard}
             onKeyDown={handleStatCardKeyDown}
-            style={{ cursor: hasDanger ? "pointer" : "default" }}
             aria-pressed={selectedIdx !== null}
             aria-label={
               hasDanger
@@ -255,6 +263,8 @@ const Main: React.FC = () => {
           )}
         </div>
       </main>
+
+      <Footer onSearch={handleFooterSearch} />
     </div>
   );
 };

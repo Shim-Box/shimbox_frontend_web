@@ -1,12 +1,16 @@
 import React, { useState, useEffect, useContext } from "react";
+import { useNavigate } from "react-router-dom";
 import Sidebar from "../pages/Sidebar";
 import "../styles/Register.css";
 import { ApiService } from "../services/apiService";
 import { PendingUser } from "../models/AdminModels";
 import { AuthContext } from "../context/AuthContext";
+import Footer, { FooterFilters } from "../pages/Footer";
 
 const Register: React.FC = () => {
   const { token } = useContext(AuthContext);
+  const navigate = useNavigate();
+
   const [drivers, setDrivers] = useState<PendingUser[]>([]);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [checkedIds, setCheckedIds] = useState<number[]>([]);
@@ -19,7 +23,7 @@ const Register: React.FC = () => {
       const page = 1,
         size = 10;
       const resp = await ApiService.fetchPendingUsers(token, page, size);
-      setDrivers(resp.data);
+      setDrivers(resp.data ?? []);
     } catch (err) {
       console.error("대기자 목록 조회 실패", err);
     } finally {
@@ -47,6 +51,10 @@ const Register: React.FC = () => {
     } catch (err) {
       console.error("기사 승인 실패", err);
     }
+  };
+
+  const handleFooterSearch = (filters: FooterFilters, nameQuery?: string) => {
+    navigate("/manage", { state: { ff: filters, nq: nameQuery } });
   };
 
   return (
@@ -129,7 +137,11 @@ const Register: React.FC = () => {
                   {expandedId === driver.id && (
                     <tr className="detail-row">
                       <td colSpan={6}>
-                        <div className={`detail-box ${driver.career === "초보자" ? "hide-average" : ""}`}>
+                        <div
+                          className={`detail-box ${
+                            driver.career === "초보자" ? "hide-average" : ""
+                          }`}
+                        >
                           <div>
                             <strong>생년월일</strong>
                             <br />
@@ -170,6 +182,8 @@ const Register: React.FC = () => {
           </table>
         )}
       </div>
+
+      <Footer onSearch={handleFooterSearch} />
     </div>
   );
 };

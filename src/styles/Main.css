@@ -14,6 +14,7 @@ html {
   padding: 22px;
   display: flex;
   flex-direction: column;
+  padding-bottom: 72px;
 }
 
 .stats {
@@ -50,6 +51,10 @@ html {
   max-width: 265px;
   width: 100%;
   box-sizing: border-box;
+}
+
+.stat-card.warning.clickable {
+  cursor: pointer;
 }
 
 .main-body {
@@ -163,7 +168,7 @@ html {
   color: #888;
 }
 
-/* ✅ 내용 단락 공통 스타일 */
+/* 내용 단락 공통 스타일 */
 .danger-detail p {
   margin: 6px 0;
   font-size: 14px;
@@ -171,7 +176,6 @@ html {
   text-align: left;
 }
 
-/* ✅ 구분선 */
 .section-divider {
   width: 100%;
   height: 1px;
@@ -179,14 +183,12 @@ html {
   margin: 16px 0;
 }
 
-/* ✅ 심박수 그래프 */
 .heart_rate_graph {
   width: 100%;
   max-width: 200px;
   margin: 12px 0;
 }
 
-/* ✅ 타임라인 */
 .timeline {
   width: 100%;
   margin-top: 12px;
@@ -200,7 +202,6 @@ html {
   font-size: 14px;
 }
 
-/* ✅ 응급 버튼 */
 .alert-btn {
   margin-top: 18px;
   background: #e03131;
@@ -218,7 +219,6 @@ html {
   gap: 8px;
 }
 
-/* ✅ dot 색상 */
 .dot {
   width: 10px;
   height: 10px;
@@ -236,7 +236,6 @@ html {
   background: #ff3333;
 }
 
-/* ✅ 위험 텍스트 */
 .red {
   color: #e03131;
 }
@@ -269,12 +268,10 @@ html {
   padding: 0;
 }
 
-/* 스크롤바 숨기기 (Webkit 기반 브라우저용: Chrome, Safari 등) */
 .danger-detail::-webkit-scrollbar {
   display: none;
 }
 
-/* Firefox용 */
 .danger-detail {
   scrollbar-width: none; /* Firefox */
   -ms-overflow-style: none; /* IE, Edge */
