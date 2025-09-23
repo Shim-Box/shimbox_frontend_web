@@ -1,0 +1,68 @@
+.notice-stack {
+  position: fixed;
+  right: 20px;
+  top: 20px;
+  z-index: 11000;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.notice {
+  width: 320px;
+  background: #fff;
+  border-radius: 10px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  overflow: hidden;
+  animation: slideIn 200ms ease-out;
+}
+
+.notice .notice-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.notice .notice-body {
+  padding: 10px 12px 14px 12px;
+  font-size: 13px;
+  color: #333;
+  line-height: 1.4;
+}
+
+.notice.info .notice-head {
+  background: #eef2ff;
+  color: #1e3a8a;
+}
+.notice.warning .notice-head {
+  background: #fff7ed;
+  color: #9a3412;
+}
+.notice.danger .notice-head {
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.notice-close {
+  background: transparent;
+  border: none;
+  color: inherit;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateY(-8px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
