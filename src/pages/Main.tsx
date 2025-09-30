@@ -8,55 +8,199 @@ import { ApprovedUser } from "../models/AdminModels";
 import { AuthContext } from "../context/AuthContext";
 import Footer, { FooterFilters } from "../pages/Footer";
 
-interface DangerDriver {
-  id: number;
+/** 승인된 기사 목록 더미 */
+type MiniStatus = "좋음" | "경고" | "위험";
+type AttendanceMini = "출근" | "퇴근" | "출근전";
+interface MiniDriverCard {
+  driverId: number;
   name: string;
-  bpm: number;
-  address: string;
+  residence: string;
+  status: MiniStatus;
+  attendance: AttendanceMini;
+  worktimeLabel: string;
+  delivered: number;
+  total: number;
+  profileImageUrl?: string;
 }
 
-// 임시 위험 기사 목록(지도/우측 상세용)
-const dummyDangerList: DangerDriver[] = [
-  { id: 1, name: "홍길동", bpm: 190, address: "서울특별시 구로구 경인로 445" },
-  { id: 2, name: "오아영", bpm: 188, address: "서울특별시 동대문구 장한로 10" },
-  { id: 3, name: "김민수", bpm: 175, address: "서울특별시 성북구 종암로 25" },
+const dummyApprovedMini: MiniDriverCard[] = [
+  {
+    driverId: 101,
+    name: "홍길동",
+    residence: "서울특별시 구로구 경인로 445",
+    status: "좋음",
+    attendance: "출근",
+    worktimeLabel: "AM 09:00 ~ 근무중",
+    delivered: 12,
+    total: 20,
+    profileImageUrl: "/images/PostDeliver.png",
+  },
+  {
+    driverId: 102,
+    name: "김민수",
+    residence: "서울특별시 성북구 종암로 25",
+    status: "위험",
+    attendance: "출근",
+    worktimeLabel: "AM 08:30 ~ 근무중",
+    delivered: 5,
+    total: 22,
+    profileImageUrl: "/images/PostDeliver.png",
+  },
+  {
+    driverId: 103,
+    name: "오아영",
+    residence: "서울특별시 동대문구 장한로 10",
+    status: "경고",
+    attendance: "출근",
+    worktimeLabel: "AM 09:00 ~ 근무중",
+    delivered: 9,
+    total: 18,
+    profileImageUrl: "/images/PostDeliver.png",
+  },
+  {
+    driverId: 104,
+    name: "이준호",
+    residence: "서울특별시 강남구 테헤란로 152",
+    status: "좋음",
+    attendance: "출근전",
+    worktimeLabel: "AM 10:00 ~ 예정",
+    delivered: 0,
+    total: 0,
+    profileImageUrl: "/images/PostDeliver.png",
+  },
+  {
+    driverId: 105,
+    name: "박지수",
+    residence: "서울특별시 마포구 월드컵북로 400",
+    status: "위험",
+    attendance: "출근",
+    worktimeLabel: "AM 07:50 ~ 근무중",
+    delivered: 14,
+    total: 25,
+    profileImageUrl: "/images/PostDeliver.png",
+  },
+  {
+    driverId: 106,
+    name: "최유리",
+    residence: "서울특별시 용산구 청파로 74",
+    status: "경고",
+    attendance: "출근",
+    worktimeLabel: "AM 09:10 ~ 근무중",
+    delivered: 11,
+    total: 19,
+    profileImageUrl: "/images/PostDeliver.png",
+  },
+  {
+    driverId: 107,
+    name: "정해인",
+    residence: "서울특별시 종로구 세종대로 175",
+    status: "좋음",
+    attendance: "출근",
+    worktimeLabel: "AM 09:00 ~ 근무중",
+    delivered: 7,
+    total: 16,
+    profileImageUrl: "/images/PostDeliver.png",
+  },
+  {
+    driverId: 108,
+    name: "한지민",
+    residence: "서울특별시 은평구 연서로 365",
+    status: "경고",
+    attendance: "퇴근",
+    worktimeLabel: "AM 06:00 ~ PM 02:00",
+    delivered: 20,
+    total: 20,
+    profileImageUrl: "/images/PostDeliver.png",
+  },
+  {
+    driverId: 109,
+    name: "서강준",
+    residence: "서울특별시 노원구 동일로 1414",
+    status: "좋음",
+    attendance: "출근",
+    worktimeLabel: "AM 09:20 ~ 근무중",
+    delivered: 6,
+    total: 14,
+    profileImageUrl: "/images/PostDeliver.png",
+  },
+  {
+    driverId: 110,
+    name: "아이유",
+    residence: "서울특별시 송파구 올림픽로 300",
+    status: "위험",
+    attendance: "출근",
+    worktimeLabel: "AM 08:10 ~ 근무중",
+    delivered: 10,
+    total: 24,
+    profileImageUrl: "/images/PostDeliver.png",
+  },
 ];
+
+/** 정렬/필터 모드: 상태우선 vs 위험만 vs ID순 */
+type DangerMode = "status" | "dangerOnly" | "id";
 
 const Main: React.FC = () => {
   const { token } = useContext(AuthContext);
   const navigate = useNavigate();
 
-  // 통계 상태
+  // 상단 통계(백엔드 연결 시 사용)
   const [totalApproved, setTotalApproved] = useState<number>(0);
   const [onDutyCount, setOnDutyCount] = useState<number>(0);
   const [totalCompleted, setTotalCompleted] = useState<number>(0);
   const [loadingStats, setLoadingStats] = useState<boolean>(false);
 
-  // 위험 기사 상세(오른쪽 패널)
-  const [dangerList] = useState<DangerDriver[]>(dummyDangerList);
-  const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
-  const hasDanger = dangerList.length > 0;
-  const selectedDriver = useMemo(
-    () => (selectedIdx !== null ? dangerList[selectedIdx] : null),
-    [selectedIdx, dangerList]
+  const [miniList] = useState<MiniDriverCard[]>(dummyApprovedMini);
+
+  const dangerCount = useMemo(
+    () => miniList.filter((m) => m.status === "위험").length,
+    [miniList]
+  );
+  const hasDanger = dangerCount > 0;
+
+  const [dangerMode, setDangerMode] = useState<DangerMode>("status");
+
+  const shownList = useMemo(() => {
+    const order: Record<MiniStatus, number> = { 위험: 0, 경고: 1, 좋음: 2 };
+    let base = [...miniList];
+
+    if (dangerMode === "dangerOnly") {
+      base = base.filter((m) => m.status === "위험");
+      base.sort((a, b) => {
+        const ra = a.total ? a.delivered / a.total : 0;
+        const rb = b.total ? b.delivered / b.total : 0;
+        return rb - ra;
+      });
+    } else if (dangerMode === "id") {
+      base.sort((a, b) => a.driverId - b.driverId);
+    } else {
+      base.sort((a, b) => {
+        const d = order[a.status] - order[b.status];
+        if (d !== 0) return d;
+        return a.name.localeCompare(b.name, "ko");
+      });
+    }
+    return base;
+  }, [miniList, dangerMode]);
+
+  const mapAddresses = useMemo(
+    () => shownList.map((m) => m.residence),
+    [shownList]
   );
 
-  // 경고 카드 클릭/키보드 토글
-  const toggleDangerDetailFromStatCard = () => {
-    if (!hasDanger) return;
-    setSelectedIdx((prev) => (prev === null ? 0 : null));
-  };
-  const handleStatCardKeyDown: React.KeyboardEventHandler<HTMLDivElement> = (
-    e
-  ) => {
-    if (!hasDanger) return;
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      setSelectedIdx((prev) => (prev === null ? 0 : null));
+  const cycleMode = () => {
+    if (hasDanger) {
+      setDangerMode((prev) =>
+        prev === "status"
+          ? "dangerOnly"
+          : prev === "dangerOnly"
+          ? "id"
+          : "status"
+      );
+    } else {
+      setDangerMode((prev) => (prev === "status" ? "id" : "status"));
     }
   };
 
-  // 통계 로딩
   useEffect(() => {
     if (!token) return;
 
@@ -65,24 +209,19 @@ const Main: React.FC = () => {
       try {
         setLoadingStats(true);
 
-        // 승인된 기사 목록 가져오기
         const approved = await ApiService.fetchApprovedUsers(token, {
           page: 1,
           size: 1000,
         });
-
         const list: ApprovedUser[] = approved.data ?? [];
 
-        // 전체 기사 수: 응답에 totalElements가 있으면 그 값, 없으면 목록 길이
         const approvedCount =
           typeof (approved as any).totalElements === "number"
             ? (approved as any).totalElements
             : list.length;
 
-        // 현재 배송 중(=출근) 기사 수
         const onDuty = list.filter((d) => d.attendance === "출근").length;
 
-        // 기사별 "배송완료" 목록 합산
         const completedCounts = await Promise.all(
           list.map(async (d) => {
             try {
@@ -118,7 +257,7 @@ const Main: React.FC = () => {
     };
   }, [token]);
 
-  // Footer 검색 → Manage로 이동
+  // Footer 검색 → Manage 이동
   const handleFooterSearch = (ff: FooterFilters, nq?: string) => {
     navigate("/manage", { state: { ff, nq } });
   };
@@ -128,7 +267,7 @@ const Main: React.FC = () => {
       <Sidebar />
 
       <main className="main-content">
-        {/* 통계 카드 */}
+        {/* 통계 카드 + 위험 패널 */}
         <div className="stats">
           <div className="stat-card" aria-busy={loadingStats}>
             전체 기사 수
@@ -154,113 +293,108 @@ const Main: React.FC = () => {
             </strong>
           </div>
 
-          {/* 경고 카드: 클릭/키보드로 상세 토글 */}
+          {/* 위험 패널 */}
           <div
-            className={`stat-card warning${hasDanger ? " clickable" : ""}`}
+            className="stat-card warning clickable"
             role="button"
             tabIndex={0}
-            onClick={toggleDangerDetailFromStatCard}
-            onKeyDown={handleStatCardKeyDown}
-            aria-pressed={selectedIdx !== null}
-            aria-label={
-              hasDanger
-                ? `위험 상태 기사 ${dangerList.length}명. 클릭하면 상세가 ${
-                    selectedIdx !== null ? "닫힙니다" : "열립니다"
-                  }.`
-                : "현재 위험한 택배기사가 없습니다."
-            }
-            title={hasDanger ? "클릭하여 위험 기사 상세 열기/닫기" : undefined}
+            onClick={cycleMode}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                cycleMode();
+              }
+            }}
+            aria-pressed={dangerMode !== "status"}
           >
-            {hasDanger ? (
-              <>⚠️ 위험 상태인 택배기사가 {dangerList.length}명 있습니다</>
-            ) : (
-              <>⚠️ 현재 위험한 택배기사가 없습니다</>
-            )}
+            <div className="danger-panel-content">
+              <div className="danger-headline">
+                {hasDanger
+                  ? `⚠️ 현재 위험한 기사 ${dangerCount}명 있습니다`
+                  : `⚠️ 현재 위험한 택배기사가 없습니다`}
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* 지도 + 위험 상세 */}
+        {/* 지도 + 오른쪽 승인 기사 목록 */}
         <div className="main-body">
           <div className="map-area">
             <DetailMap
-              addresses={dangerList.map((d) => d.address)}
-              level={7} // 약 2km 스케일
-              markerImageUrls={[
-                "/images/driverMarker.png",
-                "/images/dangerMarker.png",
-                "/images/driverMarker.png",
-              ]}
+              addresses={mapAddresses}
+              level={7} /* 약 2km 스케일 */
+              markerImageUrls={shownList.map(() => "/images/driverMarker.png")}
               markerSize={{ width: 35, height: 45 }}
-              onMarkerClick={(idx: number) => setSelectedIdx(idx)}
+              onMarkerClick={() => {}}
             />
           </div>
 
-          {/* 오른쪽 상세 패널 */}
-          {selectedDriver && (
-            <div className="danger-detail">
-              <div className="danger-detail-header">
-                <img
-                  src="/images/PostDeliver.png"
-                  alt="프로필"
-                  className="profile-image"
-                />
-                <div className="info">
-                  <h3>{selectedDriver.name}</h3>
-                  <span>위치: {selectedDriver.address}</span>
+          <aside className="right-side">
+            {shownList.map((m) => {
+              const ratio =
+                m.total > 0
+                  ? Math.min(100, Math.round((m.delivered / m.total) * 100))
+                  : 0;
+              const statusClass =
+                m.status === "좋음"
+                  ? "good"
+                  : m.status === "경고"
+                  ? "warn"
+                  : "danger";
+
+              return (
+                <div
+                  key={m.driverId}
+                  className={`driver-mini-card border-${statusClass}`}
+                  onClick={() => navigate(`/driver/${m.driverId}`)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      navigate(`/driver/${m.driverId}`);
+                    }
+                  }}
+                >
+                  <div className="mini-header">
+                    <img
+                      src={m.profileImageUrl || "/images/PostDeliver.png"}
+                      alt="프로필"
+                      className="mini-avatar"
+                    />
+                    <div className="mini-meta">
+                      <div className="mini-name">
+                        {m.name}{" "}
+                        <span className={`mini-pill ${statusClass}`}>
+                          {m.status}
+                        </span>
+                      </div>
+                      <div className="mini-sub">{m.residence}</div>
+                    </div>
+                  </div>
+
+                  <div className="mini-row">
+                    <span className="mini-label">근무시간</span>
+                    <span className="mini-value">{m.worktimeLabel}</span>
+                  </div>
+
+                  <div className="mini-row">
+                    <span className="mini-label">배송 건수</span>
+                    <span className="mini-value">
+                      {m.delivered} / {m.total}
+                    </span>
+                  </div>
+
+                  <div className="mini-progress">
+                    <div
+                      className={`mini-bar ${statusClass}`}
+                      style={{ width: `${ratio}%` }}
+                    />
+                  </div>
                 </div>
-              </div>
-
-              <p>
-                <strong>근무시간:</strong> AM 09:00 ~ 근무중
-              </p>
-
-              <div className="section-divider" />
-
-              <p>
-                <strong>배송 건수:</strong> 12 / 20
-              </p>
-
-              <div className="section-divider" />
-
-              <p>
-                <strong>현재 상태:</strong> <span className="red">위험</span>
-              </p>
-
-              <img
-                src="/images/Heart_rate_Graph.png"
-                alt="심박수 그래프"
-                className="heart_rate_graph"
-              />
-
-              <p>
-                <strong>심박수:</strong> {selectedDriver.bpm} bpm{" "}
-                <small>(정상: 60~100)</small>
-              </p>
-
-              <div className="section-divider" />
-
-              <div className="timeline">
-                <span>
-                  <strong>타임라인</strong>
-                </span>
-                <br />
-                <p>
-                  <span className="dot yellow"></span> 10:20 심박수 상승 시작
-                </p>
-                <p>
-                  <span className="dot orange"></span> 10:50 심박수 110 bpm
-                </p>
-                <p>
-                  <span className="dot red"></span> 11:10 심박수 190 bpm
-                </p>
-                <p>
-                  <span className="dot red"></span> 11:30 위험 상태
-                </p>
-              </div>
-
-              <button className="alert-btn">🚨 응급 경고 전송</button>
-            </div>
-          )}
+              );
+            })}
+          </aside>
         </div>
       </main>
 
