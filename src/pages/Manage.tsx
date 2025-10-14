@@ -8,17 +8,23 @@ import { ApprovedUser } from "../models/AdminModels";
 import { AuthContext } from "../context/AuthContext";
 import Footer, { FooterFilters } from "../pages/Footer";
 
+// ✅ 좁은 리터럴 타입 정의 (API 시그니처와 일치)
+type Attendance = "출근전" | "출근" | "퇴근";
+type Condition = "위험" | "불안" | "좋음";
+
 interface Filters {
-  attendance?: string;
+  attendance?: Attendance;
   residence?: string;
-  conditionStatus?: string;
+  conditionStatus?: Condition;
+  page?: number;
+  size?: number;
 }
 
 const Manage: React.FC = () => {
   const navigate = useNavigate();
-  const { token } = useContext(AuthContext);
+  const { token } = useContext(AuthContext); // 로그인 여부 체크용
 
-  const [filters, setFilters] = useState<Filters>({});
+  const [filters, setFilters] = useState<Filters>({ page: 1, size: 1000 });
   const [nameQuery, setNameQuery] = useState<string>("");
   const [drivers, setDrivers] = useState<ApprovedUser[]>([]);
   const [loading, setLoading] = useState(false);
@@ -27,14 +33,19 @@ const Manage: React.FC = () => {
     if (!token) return;
     setLoading(true);
     try {
-      const resp = await ApiService.fetchApprovedUsers(token, filters);
-      let list = resp.data ?? [];
+      const resp = await ApiService.fetchApprovedUsers({
+        attendance: filters.attendance,
+        residence: filters.residence,
+        conditionStatus: filters.conditionStatus,
+        page: filters.page ?? 1,
+        size: filters.size ?? 1000,
+      });
 
-      if (nameQuery) {
+      let list = resp.data ?? [];
+      if (nameQuery.trim()) {
         const q = nameQuery.trim();
         list = list.filter((d) => d.name?.includes(q));
       }
-
       setDrivers(list);
     } catch (err) {
       console.error("승인된 회원 목록 조회 실패", err);
@@ -45,18 +56,42 @@ const Manage: React.FC = () => {
 
   useEffect(() => {
     loadApproved();
-  }, [token, filters, nameQuery]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    token,
+    filters.attendance,
+    filters.residence,
+    filters.conditionStatus,
+    nameQuery,
+  ]);
 
-  const handleFilterChange = (key: keyof Filters, value: string) => {
-    setFilters((prev) => ({ ...prev, [key]: value || undefined }));
-  };
+  // ✅ 각 필터별로 안전한 좁히기
+  const onAttendanceChange = (v: string) =>
+    setFilters((prev) => ({
+      ...prev,
+      attendance: (v || undefined) as Attendance | undefined,
+    }));
+
+  const onConditionChange = (v: string) =>
+    setFilters((prev) => ({
+      ...prev,
+      conditionStatus: (v || undefined) as Condition | undefined,
+    }));
+
+  const onResidenceChange = (v: string) =>
+    setFilters((prev) => ({ ...prev, residence: v || undefined }));
 
   const handleFooterSearch = (ff: FooterFilters, nq?: string) => {
-    setFilters({
-      attendance: ff.attendance,
-      residence: ff.residence,
-      conditionStatus: ff.conditionStatus,
-    });
+    setFilters((prev) => ({
+      ...prev,
+      attendance: (ff.attendance || undefined) as Attendance | undefined,
+      residence: ff.residence || undefined,
+      conditionStatus: (ff.conditionStatus || undefined) as
+        | Condition
+        | undefined,
+      page: 1,
+      size: prev.size ?? 1000,
+    }));
     setNameQuery(nq || "");
   };
 
@@ -74,7 +109,7 @@ const Manage: React.FC = () => {
           <div className="filter-bar">
             <select
               value={filters.attendance || ""}
-              onChange={(e) => handleFilterChange("attendance", e.target.value)}
+              onChange={(e) => onAttendanceChange(e.target.value)}
             >
               <option value="">근무상태</option>
               <option value="출근전">출근전</option>
@@ -84,7 +119,7 @@ const Manage: React.FC = () => {
 
             <select
               value={filters.residence || ""}
-              onChange={(e) => handleFilterChange("residence", e.target.value)}
+              onChange={(e) => onResidenceChange(e.target.value)}
             >
               <option value="">근무지</option>
               <option value="강남구">강남구</option>
@@ -96,9 +131,7 @@ const Manage: React.FC = () => {
 
             <select
               value={filters.conditionStatus || ""}
-              onChange={(e) =>
-                handleFilterChange("conditionStatus", e.target.value)
-              }
+              onChange={(e) => onConditionChange(e.target.value)}
             >
               <option value="">상태</option>
               <option value="위험">위험</option>

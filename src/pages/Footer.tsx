@@ -1,5 +1,7 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState, useContext } from "react";
+import { useNavigate } from "react-router-dom";
 import "../styles/Footer.css";
+import { AuthContext } from "../context/AuthContext";
 
 export type FooterFilters = {
   residence?: string;
@@ -24,6 +26,9 @@ const Footer: React.FC<FooterProps> = ({
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const navigate = useNavigate();
+  const { setToken } = useContext(AuthContext);
 
   // 시계
   const [now, setNow] = useState<Date>(new Date());
@@ -92,6 +97,25 @@ const Footer: React.FC<FooterProps> = ({
     };
   }, [now]);
 
+  // 로그아웃
+  const handleLogout = () => {
+    try {
+      // 토큰 모두 삭제
+      localStorage.removeItem("accessToken");
+      sessionStorage.removeItem("accessToken");
+      sessionStorage.removeItem("refreshToken");
+
+      // 컨텍스트 상태 초기화
+      setToken?.(null);
+
+      // 로그인 페이지로 이동
+      navigate("/login", { replace: true });
+    } catch (e) {
+      console.error("로그아웃 중 오류:", e);
+      navigate("/login", { replace: true });
+    }
+  };
+
   return (
     <footer className="app-footer">
       <div className={`footer-left ${open ? "open" : ""}`}>
@@ -140,6 +164,10 @@ const Footer: React.FC<FooterProps> = ({
       </div>
 
       <div className="footer-right">
+        <button className="logout-btn" onClick={handleLogout} title="로그아웃">
+          로그아웃
+        </button>
+
         <div className="clock-box" role="timer" aria-live="polite">
           <span className="clock-time">{timeStr}</span>
           <span className="clock-date">{dateStr}</span>

@@ -22,18 +22,30 @@
 
 .approve-button {
   background-color: #2cd0ae;
-  color: white;
+  color: #fff;
   border: none;
   padding: 10px 20px;
   border-radius: 6px;
   font-size: 14px;
   cursor: pointer;
+  transition: transform 0.05s ease, opacity 0.15s ease,
+    background-color 0.15s ease;
+}
+.approve-button:hover {
+  background-color: #25bba0;
+}
+.approve-button:active {
+  transform: translateY(1px);
+}
+.approve-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .driver-table {
   width: 100%;
   border-collapse: collapse;
-  background-color: white;
+  background-color: #fff;
   border-radius: 8px;
   overflow: hidden;
 }
@@ -65,10 +77,13 @@
   justify-content: space-around;
   padding: 15px;
   font-size: 14px;
+  gap: 16px;
+  flex-wrap: wrap;
 }
 
 .detail-box div {
   text-align: center;
+  min-width: 120px;
 }
 
 .danger-dot {
@@ -80,8 +95,114 @@
   margin-right: 6px;
 }
 
-/* 초보자 경력일 때 평균 항목 숨기기 */
 .hide-average div:nth-child(3),
 .hide-average div:nth-child(4) {
   display: none;
+}
+
+.assign-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.assign-modal {
+  width: 420px;
+  max-width: calc(100% - 40px);
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.2);
+  padding: 20px;
+  animation: modal-pop 0.12s ease-out;
+}
+
+@keyframes modal-pop {
+  from {
+    transform: scale(0.98);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.assign-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: #18a57e;
+  font-weight: 600;
+  margin-bottom: 16px;
+  font-size: 16px;
+}
+
+.assign-close {
+  border: none;
+  background: transparent;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  color: #888;
+}
+.assign-close:hover {
+  color: #555;
+}
+
+.assign-body {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.assign-select {
+  flex: 1;
+  padding: 10px 12px;
+  border: 1px solid #dcdcdc;
+  border-radius: 6px;
+  background: #fff;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.assign-select:focus {
+  border-color: #2cd0ae;
+  box-shadow: 0 0 0 3px rgba(44, 208, 174, 0.2);
+}
+
+.assign-submit {
+  width: 100%;
+  padding: 12px 0;
+  border: none;
+  border-radius: 8px;
+  background: #7ad4b6;
+  color: #fff;
+  font-weight: 700;
+  font-size: 15px;
+  cursor: pointer;
+  transition: background-color 0.15s ease, transform 0.05s ease;
+}
+.assign-submit:hover {
+  background: #69c7aa;
+}
+.assign-submit:active {
+  transform: translateY(1px);
+}
+.assign-submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* 작은 화면 대응 */
+@media (max-width: 480px) {
+  .detail-box {
+    justify-content: center;
+  }
+  .assign-body {
+    flex-direction: column;
+  }
 }

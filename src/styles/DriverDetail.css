@@ -318,3 +318,43 @@ body,
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
+
+/* 상태 배지 */
+.condition-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 12px;
+}
+.condition-badge.good {
+  background: #e9f8f3;
+  color: #1aa37a;
+}
+.condition-badge.warn {
+  background: #fff8e1;
+  color: #d4a106;
+}
+.condition-badge.danger {
+  background: #ffe7e7;
+  color: #e23d3d;
+}
+
+/* 위험 테마 토글 */
+.profile-card.danger,
+.health-card.danger {
+  border-color: #ffdddd;
+  box-shadow: 0 0 0 2px rgba(226, 61, 61, 0.08);
+}
+
+/* 업데이트(수집 시각) 라인: 글씨 작게 + 오른쪽 정렬 */
+.info-row--update {
+  justify-content: flex-end; /* 오른쪽 정렬 */
+  margin-top: 4px;
+}
+
+.info-row--update .update-time {
+  font-size: 10px; /* 더 작게 */
+  color: #7a7a7a; /* 살짝 옅은 색 */
+  text-align: right;
+}

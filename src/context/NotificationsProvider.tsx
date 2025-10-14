@@ -1,3 +1,4 @@
+// src/context/NotificationsProvider.tsx
 import React, {
   createContext,
   useContext,
@@ -27,6 +28,7 @@ interface NotificationsContextValue {
 const NotificationsContext = createContext<NotificationsContextValue | null>(
   null
 );
+
 export const useNotifications = () => {
   const ctx = useContext(NotificationsContext);
   if (!ctx)
@@ -36,7 +38,7 @@ export const useNotifications = () => {
   return ctx;
 };
 
-const POLL_MS = 15000; // 15초마다 승인 기사 목록 폴링
+const POLL_MS = 15000; // 15초
 const DANGER_MS = 10 * 60_000; // 10분
 
 export const NotificationsProvider: React.FC<{ children: React.ReactNode }> = ({
@@ -65,7 +67,7 @@ export const NotificationsProvider: React.FC<{ children: React.ReactNode }> = ({
 
     const tick = async () => {
       try {
-        const resp = await ApiService.fetchApprovedUsers(token, {
+        const resp = await ApiService.fetchApprovedUsers({
           page: 1,
           size: 1000,
         });
@@ -81,7 +83,7 @@ export const NotificationsProvider: React.FC<{ children: React.ReactNode }> = ({
           const current = d.conditionStatus;
           const prev = prevStatus.get(d.driverId);
 
-          // 1) 상태 변화 알림
+          // 상태 변화 알림
           if (prev && prev !== current) {
             const key = `${prev}->${current}`;
             const important =
@@ -105,10 +107,9 @@ export const NotificationsProvider: React.FC<{ children: React.ReactNode }> = ({
             }
           }
 
-          // 2) 위험 지속 10분 체크
+          // 위험 지속 10분 체크
           if (current === "위험") {
             if (!dangerSince.has(d.driverId)) {
-              // 위험 진입 시간 기록
               dangerSince.set(d.driverId, now);
               dangerPersistNotified.set(d.driverId, false);
             } else {
@@ -125,14 +126,13 @@ export const NotificationsProvider: React.FC<{ children: React.ReactNode }> = ({
               }
             }
           } else {
-            // 위험이 아니면 초기화
             dangerSince.delete(d.driverId);
             dangerPersistNotified.delete(d.driverId);
           }
+
           prevStatus.set(d.driverId, current);
         });
 
-        // 목록에서 사라진 드라이버 정리
         const currentIds = new Set(list.map((d) => d.driverId));
         [...prevStatus.keys()].forEach((id) => {
           if (!currentIds.has(id)) {
@@ -141,7 +141,8 @@ export const NotificationsProvider: React.FC<{ children: React.ReactNode }> = ({
             dangerPersistNotified.delete(id);
           }
         });
-      } catch (e) {}
+      } catch (e) {
+      }
     };
 
     // 즉시 1회 + 인터벌
