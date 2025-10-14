@@ -100,15 +100,10 @@ const Footer: React.FC<FooterProps> = ({
   // 로그아웃
   const handleLogout = () => {
     try {
-      // 토큰 모두 삭제
       localStorage.removeItem("accessToken");
       sessionStorage.removeItem("accessToken");
       sessionStorage.removeItem("refreshToken");
-
-      // 컨텍스트 상태 초기화
       setToken?.(null);
-
-      // 로그인 페이지로 이동
       navigate("/login", { replace: true });
     } catch (e) {
       console.error("로그아웃 중 오류:", e);
@@ -124,6 +119,7 @@ const Footer: React.FC<FooterProps> = ({
           aria-label="검색"
           onClick={() => setOpen((v) => !v)}
           title="검색"
+          type="button"
         >
           <svg
             width="18"
@@ -151,20 +147,27 @@ const Footer: React.FC<FooterProps> = ({
           </svg>
         </button>
 
+        {/* 중요: min-width:0 이 적용되는 래퍼 + max-width 애니메이션 */}
         <form className="footer-search-form" onSubmit={handleSubmit}>
           <input
             ref={inputRef}
             className="footer-search-input"
-            type="text"
+            type="search"
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder={placeholder}
+            aria-label="검색"
           />
         </form>
       </div>
 
       <div className="footer-right">
-        <button className="logout-btn" onClick={handleLogout} title="로그아웃">
+        <button
+          className="logout-btn"
+          onClick={handleLogout}
+          title="로그아웃"
+          type="button"
+        >
           로그아웃
         </button>
 

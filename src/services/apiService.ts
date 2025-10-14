@@ -1,3 +1,4 @@
+// src/services/apiService.ts
 import axios, { AxiosError, AxiosResponse, AxiosRequestHeaders } from "axios";
 import { BASE_URL } from "../env";
 import { ApiResponse } from "../models/ApiResponse";
@@ -8,11 +9,8 @@ import {
   ApprovedUser,
   DeliveryItem,
   DriverProfile,
-  HeartRateTimelineItem as HeartRatePoint,
   AssignRegionRequest,
   AssignRegionResponse,
-  RealtimeHealthItem,
-  LocationRealtimeItem,
   ProductTimelineItem,
 } from "../models/AdminModels";
 import { PaginatedResponse } from "../models/PaginatedResponse";
@@ -101,7 +99,7 @@ async function reissue(): Promise<string | undefined> {
     waitQueue.forEach((fn) => fn(tokens.accessToken));
     waitQueue = [];
     return tokens.accessToken;
-  } catch (e) {
+  } catch {
     clearTokens();
     waitQueue.forEach((fn) => fn(undefined));
     waitQueue = [];
@@ -143,8 +141,7 @@ client.interceptors.response.use(
           "Authorization"
         ] = `Bearer ${newAccess}`;
         return client(original);
-      } catch (e) {
-        // 리프레시 실패 시 토큰 정리 후 에러 반환
+      } catch {
         clearTokens();
         return Promise.reject(error);
       }
@@ -223,24 +220,7 @@ export const ApiService = {
       .then(unwrap);
   },
 
-  /* Realtime & Timelines */
-  fetchRealtimeHealth(region?: string) {
-    return client
-      .get<ApiResponse<RealtimeHealthItem[]>>("api/v1/admin/realtime/health", {
-        params: region ? { region } : undefined,
-      })
-      .then(unwrap);
-  },
-
-  fetchRealtimeLocations(region?: string) {
-    return client
-      .get<ApiResponse<LocationRealtimeItem[]>>(
-        "api/v1/admin/location/realtime",
-        { params: region ? { region } : undefined }
-      )
-      .then(unwrap);
-  },
-
+  /* Product timeline */
   fetchProductTimeline(productId: number) {
     return client
       .get<ApiResponse<ProductTimelineItem[]>>(
@@ -254,18 +234,6 @@ export const ApiService = {
     return client
       .get<ApiResponse<DriverProfile>>(
         `api/v1/admin/driver/${driverId}/profile`
-      )
-      .then(unwrap);
-  },
-
-  fetchDriverHeartRateTimeline(
-    driverId: number,
-    opts?: { date?: string; days?: number }
-  ) {
-    return client
-      .get<ApiResponse<HeartRatePoint[]>>(
-        `api/v1/admin/driver/${driverId}/heartrate-timeline`,
-        { params: opts }
       )
       .then(unwrap);
   },

@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useContext } from "react";
+// src/pages/Manage.tsx
+import React, { useState, useEffect, useContext, useMemo } from "react";
 import Sidebar from "../pages/Sidebar";
 import { useNavigate } from "react-router-dom";
 import "../styles/Manage.css";
@@ -8,7 +9,7 @@ import { ApprovedUser } from "../models/AdminModels";
 import { AuthContext } from "../context/AuthContext";
 import Footer, { FooterFilters } from "../pages/Footer";
 
-// ✅ 좁은 리터럴 타입 정의 (API 시그니처와 일치)
+// ✅ 좁은 리터럴 타입
 type Attendance = "출근전" | "출근" | "퇴근";
 type Condition = "위험" | "불안" | "좋음";
 
@@ -20,15 +21,51 @@ interface Filters {
   size?: number;
 }
 
+/** ─────────────────────────
+ * 테스트용 DEMO 상태 주입 유틸
+ *  - 출근 중 6명: [좋음,좋음,불안,불안,위험,위험]
+ *  - 실제 데이터는 변경하지 않고, 화면에 표시될 리스트만 가공
+ *  - 로컬스토리지 플래그로 온오프
+ * ───────────────────────── */
+const DEMO_FLAG_KEY = "demo:forceState"; // "1"이면 켜짐
+const DEMO_COUNT_KEY = "demo:forceCount"; // 기본 6
+
+function applyDemoForces(list: ApprovedUser[]): ApprovedUser[] {
+  if (typeof window === "undefined") return list;
+
+  const on = localStorage.getItem(DEMO_FLAG_KEY) === "1";
+  if (!on) return list;
+
+  const want = Number(localStorage.getItem(DEMO_COUNT_KEY) || 6);
+  if (!Array.isArray(list) || list.length === 0) return list;
+
+  // 원하는 분포
+  const desired: Condition[] = ["좋음", "좋음", "불안", "불안", "위험", "위험"];
+  const take = Math.min(want, desired.length, list.length);
+
+  const cloned = list.map((u) => ({ ...u })); // 얕은 복사로 표시만 조정
+
+  // 앞쪽에서부터 take명을 출근 + 목표 상태로 세팅
+  for (let i = 0; i < take; i++) {
+    cloned[i].attendance = "출근";
+    cloned[i].conditionStatus = desired[i];
+    // 화면 보조용 더미 값(있으면 UI가 더 자연스러움)
+    cloned[i].workTime = cloned[i].workTime || "금일 4시간";
+    cloned[i].deliveryStats = cloned[i].deliveryStats || "42건";
+  }
+  return cloned;
+}
+
 const Manage: React.FC = () => {
   const navigate = useNavigate();
-  const { token } = useContext(AuthContext); // 로그인 여부 체크용
+  const { token } = useContext(AuthContext);
 
   const [filters, setFilters] = useState<Filters>({ page: 1, size: 1000 });
   const [nameQuery, setNameQuery] = useState<string>("");
-  const [drivers, setDrivers] = useState<ApprovedUser[]>([]);
+  const [driversRaw, setDriversRaw] = useState<ApprovedUser[]>([]);
   const [loading, setLoading] = useState(false);
 
+  // 실제 API 호출
   const loadApproved = async () => {
     if (!token) return;
     setLoading(true);
@@ -46,7 +83,7 @@ const Manage: React.FC = () => {
         const q = nameQuery.trim();
         list = list.filter((d) => d.name?.includes(q));
       }
-      setDrivers(list);
+      setDriversRaw(list);
     } catch (err) {
       console.error("승인된 회원 목록 조회 실패", err);
     } finally {
@@ -65,7 +102,10 @@ const Manage: React.FC = () => {
     nameQuery,
   ]);
 
-  // ✅ 각 필터별로 안전한 좁히기
+  // 화면에 표시할 리스트 (DEMO 주입 적용)
+  const drivers = useMemo(() => applyDemoForces(driversRaw), [driversRaw]);
+
+  // 필터 핸들러
   const onAttendanceChange = (v: string) =>
     setFilters((prev) => ({
       ...prev,
@@ -95,6 +135,24 @@ const Manage: React.FC = () => {
     setNameQuery(nq || "");
   };
 
+  /** DEMO 토글 (테스트용 버튼) */
+  const demoOn =
+    (typeof window !== "undefined" &&
+      localStorage.getItem(DEMO_FLAG_KEY) === "1") ||
+    false;
+  const toggleDemo = () => {
+    if (typeof window === "undefined") return;
+    if (demoOn) {
+      localStorage.removeItem(DEMO_FLAG_KEY);
+      localStorage.removeItem(DEMO_COUNT_KEY);
+    } else {
+      localStorage.setItem(DEMO_FLAG_KEY, "1");
+      localStorage.setItem(DEMO_COUNT_KEY, "6"); // 출근 6명 강제
+    }
+    // 데이터 새로고침
+    loadApproved();
+  };
+
   return (
     <div className="manage-container">
       <Sidebar />
@@ -106,10 +164,12 @@ const Manage: React.FC = () => {
             <p className="subtitle">승인된 회원 목록</p>
           </div>
 
-          <div className="filter-bar">
+          {/* 필터 + DEMO 토글 */}
+          <div className="filter-bar" style={{ gap: 8 }}>
             <select
               value={filters.attendance || ""}
               onChange={(e) => onAttendanceChange(e.target.value)}
+              title="근무상태"
             >
               <option value="">근무상태</option>
               <option value="출근전">출근전</option>
@@ -120,6 +180,7 @@ const Manage: React.FC = () => {
             <select
               value={filters.residence || ""}
               onChange={(e) => onResidenceChange(e.target.value)}
+              title="근무지"
             >
               <option value="">근무지</option>
               <option value="강남구">강남구</option>
@@ -132,6 +193,7 @@ const Manage: React.FC = () => {
             <select
               value={filters.conditionStatus || ""}
               onChange={(e) => onConditionChange(e.target.value)}
+              title="상태"
             >
               <option value="">상태</option>
               <option value="위험">위험</option>
@@ -145,6 +207,17 @@ const Manage: React.FC = () => {
               disabled={loading}
             >
               검색
+            </button>
+
+            {/* DEMO 토글 버튼: 개발/테스트용 */}
+            <button
+              type="button"
+              onClick={toggleDemo}
+              className="search-btn"
+              style={{ background: demoOn ? "#2563eb" : "#9ca3af" }}
+              title="테스트용: 출근 6명(좋음2/불안2/위험2) 강제"
+            >
+              {demoOn ? "DEMO 주입 ON" : "DEMO 주입 OFF"}
             </button>
           </div>
         </div>
@@ -188,8 +261,8 @@ const Manage: React.FC = () => {
                     </span>
                   </td>
                   <td>{d.residence}</td>
-                  <td>{d.workTime}</td>
-                  <td>{d.deliveryStats}</td>
+                  <td>{d.workTime || "-"}</td>
+                  <td>{d.deliveryStats || "-"}</td>
                   <td>
                     <span className={`condition-dot ${d.conditionStatus}`}>
                       ●

@@ -27,6 +27,7 @@ html {
   gap: 20px;
   margin-bottom: 20px;
   margin-top: 5px;
+  align-items: stretch;
 }
 
 .stat-card {
@@ -54,9 +55,9 @@ html {
   justify-content: center;
   text-align: center;
 
-  height: 100%;
+  flex: 0 0 var(--right-side-width);
   max-width: var(--right-side-width);
-  width: 100%;
+  width: var(--right-side-width);
   box-sizing: border-box;
 }
 .stat-card.warning.clickable {

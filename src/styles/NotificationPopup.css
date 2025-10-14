@@ -1,0 +1,117 @@
+/* src/styles/NotificationPopup.css */
+.np-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(17, 17, 17, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 99999;
+}
+
+.np-modal {
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.18), 0 2px 6px rgba(0, 0, 0, 0.08);
+  /* ▶ 크기/여백 업 */
+  padding: 24px;
+  min-width: 520px;
+  max-width: 92vw;
+  min-height: 240px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+}
+
+.np-modal.info {
+  border-top: 6px solid #3b82f6;
+}
+.np-modal.warning {
+  border-top: 6px solid #f59e0b;
+}
+.np-modal.danger {
+  border-top: 6px solid #ef4444;
+}
+
+.np-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  /* 제목 영역 여백 약간 확대 */
+  margin-bottom: 22px;
+}
+
+.np-header strong {
+  /* ▶ 제목 폰트 키움 */
+  font-size: 20px;
+  font-weight: 800;
+  color: #111;
+}
+
+.np-close {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: #666;
+  cursor: pointer;
+  font-size: 22px; /* ▶ 닫기 버튼 조금 키움 */
+  line-height: 1;
+  padding: 4px 6px;
+  border-radius: 8px;
+}
+.np-close:hover {
+  background: #f3f4f6;
+}
+
+.np-body {
+  /* ▶ 본문 폰트 키움 + 줄간격 여유 */
+  font-size: 17px;
+  line-height: 1.6;
+  color: #333;
+  margin-bottom: 18px;
+  text-align: center;
+  margin-top: 25px;
+}
+
+.np-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: auto; /* 버튼을 하단으로 밀어 팝업 높이 체감 향상 */
+}
+
+.np-primary {
+  appearance: none;
+  border: none;
+  background: #111827;
+  color: #fff;
+  /* ▶ 버튼 폰트/패딩 키움 */
+  font-size: 15px;
+  font-weight: 600;
+  padding: 10px 16px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.np-primary:hover {
+  background: #0f1626;
+}
+
+/* 모바일 대응: 화면이 좁으면 자동 축소 */
+@media (max-width: 600px) {
+  .np-modal {
+    min-width: 0;
+    width: 92vw;
+    min-height: 220px; /* 모바일에서는 살짝만 높이 확보 */
+    padding: 20px;
+  }
+  .np-header strong {
+    font-size: 18px;
+  }
+  .np-body {
+    font-size: 16px;
+  }
+  .np-primary {
+    font-size: 14px;
+    padding: 9px 14px;
+  }
+}

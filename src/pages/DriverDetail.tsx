@@ -7,9 +7,7 @@ import DetailMap from "../components/DetailMap";
 import { ApiService } from "../services/apiService";
 import {
   DeliveryItem,
-  RealtimeHealthItem,
   ProductTimelineItem,
-  HeartRateTimelineItem as HeartRatePoint,
   ApprovedUser,
   DriverProfile,
 } from "../models/AdminModels";
@@ -49,6 +47,14 @@ type WSLocationMsg = {
 
 type WSMessage = WSHealthMsg | WSLocationMsg;
 
+// 실시간 건강 로컬 타입 (REST 제거로 최소 필드만 사용)
+type RealtimeHealth = {
+  userId: string;
+  heartRate: number;
+  step: number;
+  capturedAt: string;
+};
+
 const DriverDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const { token } = useContext(AuthContext);
@@ -72,13 +78,8 @@ const DriverDetail: React.FC = () => {
     "ONGOING"
   );
 
-  // 실시간 건강(심박/걸음) — 없으면 0으로 표시
-  const [realtime, setRealtime] = useState<RealtimeHealthItem | null>(null);
-  const [loadingRealtime, setLoadingRealtime] = useState(false);
-
-  // 심박수 타임라인 — "위험"일 때만 노출
-  const [hrTimeline, setHrTimeline] = useState<HeartRatePoint[]>([]);
-  const [loadingHrTimeline, setLoadingHrTimeline] = useState(false);
+  // 실시간 건강(심박/걸음) — WebSocket으로만 갱신
+  const [realtime, setRealtime] = useState<RealtimeHealth | null>(null);
 
   // 상품 타임라인 (우측 패널)
   const [selectedProductId, setSelectedProductId] = useState<number | null>(
@@ -104,9 +105,12 @@ const DriverDetail: React.FC = () => {
     if (!token || !driverId) return;
     ApiService.fetchApprovedUsers({ page: 1, size: 1000 })
       .then((resp) => {
-        const list: ApprovedUser[] = resp.data ?? [];
-        const found = list.find((d) => d.driverId === driverId);
-        setUserIdForDriver(found?.userId ? String(found.userId) : null);
+        // unwrap 형태를 몰라 안전하게 처리
+        const list: ApprovedUser[] =
+          (resp as any)?.data ?? (resp as any)?.items ?? (resp as any) ?? [];
+        const found = list.find((d: any) => d.driverId === driverId);
+        const uid = (found as any)?.userId ?? driverId; // userId 없으면 driverId 문자열 사용
+        setUserIdForDriver(String(uid));
       })
       .catch(() => setUserIdForDriver(null));
   }, [token, driverId]);
@@ -146,20 +150,7 @@ const DriverDetail: React.FC = () => {
       .finally(() => setLoadingCompleted(false));
   }, [token, driverId]);
 
-  /* 4) 실시간 건강(심박/걸음) — 초기 로딩(REST) */
-  useEffect(() => {
-    if (!token || !userIdForDriver) return;
-    setLoadingRealtime(true);
-    ApiService.fetchRealtimeHealth()
-      .then((list) => {
-        const mine = (list || []).find(
-          (it) => String(it.userId) === String(userIdForDriver)
-        );
-        setRealtime(mine ?? null);
-      })
-      .catch(() => setRealtime(null))
-      .finally(() => setLoadingRealtime(false));
-  }, [token, userIdForDriver]);
+  /* 4) (REST 제거) 초기 실시간 건강 로딩은 WebSocket으로만 처리 */
 
   /* 4-1) WebSocket 구독 (관리자 웹, 성북구) — wsClient 대신 직접 연결 */
   useEffect(() => {
@@ -174,18 +165,6 @@ const DriverDetail: React.FC = () => {
 
     const ws = new WebSocket(wsUrl);
 
-    ws.onopen = () => {
-      // console.debug("WS open");
-    };
-
-    ws.onerror = () => {
-      // console.warn("WS error");
-    };
-
-    ws.onclose = () => {
-      // console.debug("WS closed");
-    };
-
     ws.onmessage = (evt: MessageEvent<string>) => {
       try {
         const msg: WSMessage = JSON.parse(evt.data);
@@ -195,21 +174,18 @@ const DriverDetail: React.FC = () => {
           if (p?.driverId === profile.driverId) {
             const hr = Number(p.heartRate ?? 0);
             const st = Number(p.step ?? 0);
-            const recordedAt = p.recordedAt || p.capturedAt || null;
+            const recordedAt = p.recordedAt || p.capturedAt || "";
 
-            // ✅ 타입(RealtimeHealthItem) 필드만 업데이트
-            setRealtime((prev): RealtimeHealthItem => {
-              return {
-                userId:
-                  (userIdForDriver ??
-                    prev?.userId ??
-                    (p.userId !== undefined ? String(p.userId) : "")) ||
-                  "",
-                heartRate: hr,
-                step: st,
-                capturedAt: recordedAt ?? prev?.capturedAt ?? "",
-              };
-            });
+            setRealtime((prev) => ({
+              userId:
+                (userIdForDriver ??
+                  prev?.userId ??
+                  (p.userId !== undefined ? String(p.userId) : "")) ||
+                "",
+              heartRate: hr,
+              step: st,
+              capturedAt: recordedAt,
+            }));
           }
         } else {
           // msg.type === "location" 인 케이스는 여기서 필요 시 처리
@@ -226,20 +202,13 @@ const DriverDetail: React.FC = () => {
     };
   }, [token, profile, userIdForDriver]);
 
-  /* 5) 심박수 타임라인 — 위험일 때만 호출 */
+  /* 5) (REST 제거) 위험일 때 심박수 타임라인 호출 로직 삭제
+        - 필요 시 WebSocket 기반의 별도 타임라인 스트림/버퍼링으로 대체하세요.
+  */
   const isDanger = useMemo(
     () => (profile?.conditionStatus ?? "") === "위험",
     [profile]
   );
-
-  useEffect(() => {
-    if (!token || !driverId || !isDanger) return;
-    setLoadingHrTimeline(true);
-    ApiService.fetchDriverHeartRateTimeline(driverId, { days: 1 })
-      .then((pts) => setHrTimeline(Array.isArray(pts) ? pts : []))
-      .catch(() => setHrTimeline([]))
-      .finally(() => setLoadingHrTimeline(false));
-  }, [token, driverId, isDanger]);
 
   /* 상품 카드 클릭 시 타임라인 */
   const loadProductTimeline = async (pid: number) => {
@@ -270,7 +239,7 @@ const DriverDetail: React.FC = () => {
   // 특이사항(좋음/불안일 때만 심박 기반 표시)
   const liveHeartRate = Number(realtime?.heartRate ?? 0);
   const riskNote = useMemo(() => {
-    if (isDanger) return null; // 위험은 별도 처리(타임라인 노출)
+    if (isDanger) return null; // 위험은 별도 처리(타임라인 제거됨)
     if (liveHeartRate >= 150) return "고심박";
     if (liveHeartRate > 0 && liveHeartRate <= 45) return "저심박";
     return null;
@@ -364,55 +333,29 @@ const DriverDetail: React.FC = () => {
             </div>
           </div>
 
-          {/* 건강 패널 — 실시간 건강 데이터 */}
+          {/* 건강 패널 — 실시간 건강 데이터 (WS만 사용) */}
           <div className={healthCardClass}>
             <h4>건강 상태</h4>
-            {loadingRealtime ? (
-              <p>실시간 건강 데이터를 불러오는 중...</p>
-            ) : (
-              <>
-                <div className="info-row">
-                  <span>💚 심박수</span>
-                  <strong>{fmtNum(realtime?.heartRate ?? 0)} bpm</strong>
-                </div>
-                <div className="info-row">
-                  <span>🟡 걸음수</span>
-                  <strong>{fmtNum(realtime?.step ?? 0)} 걸음</strong>
-                </div>
+            <>
+              <div className="info-row">
+                <span>💚 심박수</span>
+                <strong>{fmtNum(realtime?.heartRate ?? 0)} bpm</strong>
+              </div>
+              <div className="info-row">
+                <span>🟡 걸음수</span>
+                <strong>{fmtNum(realtime?.step ?? 0)} 걸음</strong>
+              </div>
 
-                {/* 작은 글씨 + 오른쪽 정렬 업데이트 시간 */}
-                <div className="info-row info-row--update">
-                  <span className="update-time">
-                    업데이트 {fmtTime(realtime?.capturedAt ?? null)}
-                  </span>
-                </div>
-              </>
-            )}
+              {/* 작은 글씨 + 오른쪽 정렬 업데이트 시간 */}
+              <div className="info-row info-row--update">
+                <span className="update-time">
+                  업데이트 {fmtTime(realtime?.capturedAt ?? null)}
+                </span>
+              </div>
+            </>
           </div>
 
-          {/* 위험일 때만 심박수 타임라인 표시 */}
-          {isDanger && (
-            <div className="health-card danger">
-              <h4>심박수 타임라인(최근)</h4>
-              {loadingHrTimeline ? (
-                <p>불러오는 중...</p>
-              ) : hrTimeline.length === 0 ? (
-                <p>기록이 없습니다.</p>
-              ) : (
-                <ul className="small-list">
-                  {hrTimeline
-                    .slice(-10)
-                    .reverse()
-                    .map((p, idx) => (
-                      <li key={idx} className="small-row">
-                        <span>{fmtTime(p.recordedAt)}</span>
-                        <strong>{fmtNum(p.heartRate)} bpm</strong>
-                      </li>
-                    ))}
-                </ul>
-              )}
-            </div>
-          )}
+          {/* (REST 제거) 위험일 때 심박수 타임라인 UI도 제거됨 */}
         </section>
 
         {/* 중앙 패널 */}

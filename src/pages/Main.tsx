@@ -16,16 +16,56 @@ import {
 type DangerMode = "status" | "dangerOnly" | "id";
 type StatusKey = "위험" | "불안" | "좋음" | "알수없음";
 
+/** ─────────────────────────────
+ * DEMO 토글: Manage와 동일 키 사용
+ *  - "demo:forceState" === "1" 이면 주입 ON
+ *  - 분포: [좋음,좋음,불안,불안,위험,위험] 을 앞 6명에 적용
+ * ───────────────────────────── */
+const DEMO_FLAG_KEY = "demo:forceState";
+const DEMO_COUNT_KEY = "demo:forceCount";
+const DEMO_DESIRED: StatusKey[] = [
+  "좋음",
+  "좋음",
+  "불안",
+  "불안",
+  "위험",
+  "위험",
+];
+
+function isDemoOn() {
+  return (
+    typeof window !== "undefined" && localStorage.getItem(DEMO_FLAG_KEY) === "1"
+  );
+}
+
+/** 승인 목록(ApprovedUser[])에 DEMO 강제 상태 적용 */
+function applyDemoToApproved(list: ApprovedUser[]): ApprovedUser[] {
+  if (!isDemoOn()) return list;
+  if (!Array.isArray(list) || list.length === 0) return list;
+
+  const want = Number(localStorage.getItem(DEMO_COUNT_KEY) || 6);
+  const take = Math.min(want, DEMO_DESIRED.length, list.length);
+  const cloned = list.map((u) => ({ ...u }));
+
+  for (let i = 0; i < take; i++) {
+    cloned[i].attendance = "출근";
+    cloned[i].conditionStatus = DEMO_DESIRED[i] as any;
+    cloned[i].workTime = cloned[i].workTime || "금일 4시간";
+    cloned[i].deliveryStats = cloned[i].deliveryStats || "42건";
+  }
+  return cloned;
+}
+
 /** 우측 미니 카드용 타입 */
 interface MiniDriverCard {
   driverId: number;
   name: string;
   residence: string;
-  attendance?: string; // 출근/퇴근/출근전
+  attendance?: string;
   status: StatusKey;
   profileImageUrl?: string | null;
-  delivered: number; // 배송완료 개수
-  total: number; // 전체 배정 개수
+  delivered: number;
+  total: number;
 }
 
 /** 상태 정규화/순서/클래스 */
@@ -63,7 +103,7 @@ function summarizeProducts(items: DeliveryItem[]) {
 }
 
 const Main: React.FC = () => {
-  const { token } = useContext(AuthContext); // 토큰 존재 여부로 로딩 제어만 사용
+  const { token } = useContext(AuthContext);
   const navigate = useNavigate();
 
   // 상단 통계
@@ -137,26 +177,29 @@ const Main: React.FC = () => {
     }
   };
 
-  /** 상단 통계 로딩 */
+  /** 상단 통계 로딩 (DEMO 적용) */
   useEffect(() => {
-    if (!token) return; // 로그인 전이면 호출 안 함
+    if (!token) return;
     let mounted = true;
 
     (async () => {
       try {
         setLoadingStats(true);
 
-        // 승인 목록 (통계용)
+        // 승인 목록
         const approvedRes = await ApiService.fetchApprovedUsers({
           page: 1,
           size: 1000,
         });
-        const list: ApprovedUser[] = approvedRes.data ?? [];
+        let list: ApprovedUser[] = approvedRes.data ?? [];
+
+        // 🔹 DEMO 강제 적용
+        list = applyDemoToApproved(list);
 
         // 전체 기사 수
         const approvedCount = approvedRes.totalElements ?? list.length;
 
-        // 출근자 수
+        // 출근자 수 (DEMO 반영된 값 기준)
         const onDuty = list.filter((d) => d.attendance === "출근").length;
 
         // 오늘 누적 배송(완료 합계)
@@ -195,7 +238,7 @@ const Main: React.FC = () => {
     };
   }, [token]);
 
-  /** 우측 미니 카드 목록 로딩 (승인 목록 + 각 기사별 배송건수 합산) */
+  /** 우측 미니 카드 목록 로딩 (DEMO 적용) */
   useEffect(() => {
     if (!token) return;
     let mounted = true;
@@ -204,12 +247,15 @@ const Main: React.FC = () => {
       try {
         setLoadingList(true);
 
-        // 1) 승인된 기사들 가져오기
+        // 1) 승인된 기사들
         const approvedRes = await ApiService.fetchApprovedUsers({
           page: 1,
           size: 1000,
         });
-        const list: ApprovedUser[] = approvedRes.data ?? [];
+        let list: ApprovedUser[] = approvedRes.data ?? [];
+
+        // 🔹 DEMO 강제 적용
+        list = applyDemoToApproved(list);
 
         // 2) 카드 모델로 기본 매핑
         const baseCards: MiniDriverCard[] = list.map((u) => ({
@@ -254,32 +300,26 @@ const Main: React.FC = () => {
     };
   }, [token]);
 
-  /** ✅ WebSocket 연결 (as=web, region=성북구). 상태 업데이트는 필요 시 onLocation/onHealth 내에서 처리 */
+  /** WebSocket (옵션) */
   useEffect(() => {
     if (!token) return;
 
-    // 토큰은 wsClient 내부에서 local/sessionStorage 를 읽어 붙이도록 구성했으므로
-    // 별도로 넘길 필요 없음. (buildUrl 내부에서 token 쿼리 생성)
     const disconnect = connectLocationWS({
       as: "web",
       region: "성북구",
       handlers: {
-        onLocation: (msg: { type: "location"; payload: LocationPayload }) => {
-          // console.log("WS location:", msg);
-          // 필요 시 지도/미니카드 상태 갱신 로직 추가
+        onLocation: (_msg: { type: "location"; payload: LocationPayload }) => {
+          // 필요시 지도/카드 갱신
         },
-        onHealth: (msg: { type: "health"; payload: HealthPayload }) => {
-          // console.log("WS health:", msg);
-          // 필요 시 위험 판단/배지 업데이트 등 추가
+        onHealth: (_msg: { type: "health"; payload: HealthPayload }) => {
+          // 필요시 상태 갱신
         },
       },
-      // 필요시 재연결 옵션
       reconnect: true,
       maxRetries: 5,
       retryDelayMs: 2000,
     });
 
-    // 반환된 것은 cleanup 함수이므로 그대로 호출만 해 주면 됩니다.
     return () => {
       disconnect();
     };
