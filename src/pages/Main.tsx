@@ -16,56 +16,16 @@ import {
 type DangerMode = "status" | "dangerOnly" | "id";
 type StatusKey = "위험" | "불안" | "좋음" | "알수없음";
 
-/** ─────────────────────────────
- * DEMO 토글: Manage와 동일 키 사용
- *  - "demo:forceState" === "1" 이면 주입 ON
- *  - 분포: [좋음,좋음,불안,불안,위험,위험] 을 앞 6명에 적용
- * ───────────────────────────── */
-const DEMO_FLAG_KEY = "demo:forceState";
-const DEMO_COUNT_KEY = "demo:forceCount";
-const DEMO_DESIRED: StatusKey[] = [
-  "좋음",
-  "좋음",
-  "불안",
-  "불안",
-  "위험",
-  "위험",
-];
-
-function isDemoOn() {
-  return (
-    typeof window !== "undefined" && localStorage.getItem(DEMO_FLAG_KEY) === "1"
-  );
-}
-
-/** 승인 목록(ApprovedUser[])에 DEMO 강제 상태 적용 */
-function applyDemoToApproved(list: ApprovedUser[]): ApprovedUser[] {
-  if (!isDemoOn()) return list;
-  if (!Array.isArray(list) || list.length === 0) return list;
-
-  const want = Number(localStorage.getItem(DEMO_COUNT_KEY) || 6);
-  const take = Math.min(want, DEMO_DESIRED.length, list.length);
-  const cloned = list.map((u) => ({ ...u }));
-
-  for (let i = 0; i < take; i++) {
-    cloned[i].attendance = "출근";
-    cloned[i].conditionStatus = DEMO_DESIRED[i] as any;
-    cloned[i].workTime = cloned[i].workTime || "금일 4시간";
-    cloned[i].deliveryStats = cloned[i].deliveryStats || "42건";
-  }
-  return cloned;
-}
-
 /** 우측 미니 카드용 타입 */
 interface MiniDriverCard {
   driverId: number;
   name: string;
   residence: string;
-  attendance?: string;
+  attendance?: string; // 출근/퇴근/출근전
   status: StatusKey;
   profileImageUrl?: string | null;
-  delivered: number;
-  total: number;
+  delivered: number; // 배송완료 개수
+  total: number; // 전체 배정 개수
 }
 
 /** 상태 정규화/순서/클래스 */
@@ -177,7 +137,7 @@ const Main: React.FC = () => {
     }
   };
 
-  /** 상단 통계 로딩 (DEMO 적용) */
+  /** 상단 통계 로딩 (실데이터) */
   useEffect(() => {
     if (!token) return;
     let mounted = true;
@@ -191,15 +151,12 @@ const Main: React.FC = () => {
           page: 1,
           size: 1000,
         });
-        let list: ApprovedUser[] = approvedRes.data ?? [];
-
-        // 🔹 DEMO 강제 적용
-        list = applyDemoToApproved(list);
+        const list: ApprovedUser[] = approvedRes.data ?? [];
 
         // 전체 기사 수
         const approvedCount = approvedRes.totalElements ?? list.length;
 
-        // 출근자 수 (DEMO 반영된 값 기준)
+        // 출근자 수
         const onDuty = list.filter((d) => d.attendance === "출근").length;
 
         // 오늘 누적 배송(완료 합계)
@@ -238,7 +195,7 @@ const Main: React.FC = () => {
     };
   }, [token]);
 
-  /** 우측 미니 카드 목록 로딩 (DEMO 적용) */
+  /** 우측 미니 카드 목록 로딩 (실데이터) */
   useEffect(() => {
     if (!token) return;
     let mounted = true;
@@ -252,10 +209,7 @@ const Main: React.FC = () => {
           page: 1,
           size: 1000,
         });
-        let list: ApprovedUser[] = approvedRes.data ?? [];
-
-        // 🔹 DEMO 강제 적용
-        list = applyDemoToApproved(list);
+        const list: ApprovedUser[] = approvedRes.data ?? [];
 
         // 2) 카드 모델로 기본 매핑
         const baseCards: MiniDriverCard[] = list.map((u) => ({
