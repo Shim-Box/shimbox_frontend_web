@@ -1,4 +1,3 @@
-// src/pages/DriverDetail.tsx
 import React, { useState, useEffect, useContext, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import Sidebar from "../pages/Sidebar";
@@ -13,20 +12,20 @@ import {
 } from "../models/AdminModels";
 import { AuthContext } from "../context/AuthContext";
 import Footer, { FooterFilters } from "../pages/Footer";
-import { BASE_URL } from "../env"; // wss 호스트 구성에 사용
+import { BASE_URL } from "../env";
 
-// WebSocket 수신 메시지 타입(백엔드 가이드 기준)
+/** ───────── WebSocket 수신 타입 ───────── */
 type WSHealthMsg = {
   type: "health";
   payload: {
-    driverId: number;
+    driverId?: number;
+    userId?: string | number;
     driverName?: string;
     region?: string;
     heartRate?: number;
     step?: number;
-    recordedAt?: string; // 서버가 보내는 키
-    capturedAt?: string; // 혹시 다른 키로 올 수도 있어 대비
-    userId?: string | number;
+    recordedAt?: string;
+    capturedAt?: string;
     timestamp?: number;
   };
 };
@@ -34,7 +33,8 @@ type WSHealthMsg = {
 type WSLocationMsg = {
   type: "location";
   payload: {
-    driverId: number;
+    driverId?: number;
+    userId?: string | number;
     driverName?: string;
     region?: string;
     lat: number;
@@ -47,7 +47,7 @@ type WSLocationMsg = {
 
 type WSMessage = WSHealthMsg | WSLocationMsg;
 
-// 실시간 건강 로컬 타입 (REST 제거로 최소 필드만 사용)
+/** 실시간 건강 로컬 타입 */
 type RealtimeHealth = {
   userId: string;
   heartRate: number;
@@ -62,11 +62,11 @@ const DriverDetail: React.FC = () => {
 
   const driverId = Number(id);
 
-  // 프로필(단일 기사) — 기사 프로필 조회 API
+  // 프로필
   const [profile, setProfile] = useState<DriverProfile | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
 
-  // driverId -> userId 매핑(실시간 건강 필터용)
+  // 이 driverId에 대응하는 userId(WS 매칭용)
   const [userIdForDriver, setUserIdForDriver] = useState<string | null>(null);
 
   // 배송 목록
@@ -78,10 +78,10 @@ const DriverDetail: React.FC = () => {
     "ONGOING"
   );
 
-  // 실시간 건강(심박/걸음) — WebSocket으로만 갱신
+  // 실시간 건강(WS)
   const [realtime, setRealtime] = useState<RealtimeHealth | null>(null);
 
-  // 상품 타임라인 (우측 패널)
+  // 상품 타임라인
   const [selectedProductId, setSelectedProductId] = useState<number | null>(
     null
   );
@@ -90,7 +90,7 @@ const DriverDetail: React.FC = () => {
   );
   const [loadingProductTimeline, setLoadingProductTimeline] = useState(false);
 
-  /* 1) 프로필 불러오기 */
+  /* 1) 기사 프로필 */
   useEffect(() => {
     if (!token || !driverId) return;
     setLoadingProfile(true);
@@ -100,22 +100,21 @@ const DriverDetail: React.FC = () => {
       .finally(() => setLoadingProfile(false));
   }, [token, driverId]);
 
-  /* 2) 승인 목록에서 해당 driverId의 userId 찾아서 보관 (실시간 건강 필터용) */
+  /* 2) 승인목록에서 해당 driverId → userId 매핑 */
   useEffect(() => {
     if (!token || !driverId) return;
     ApiService.fetchApprovedUsers({ page: 1, size: 1000 })
       .then((resp) => {
-        // unwrap 형태를 몰라 안전하게 처리
         const list: ApprovedUser[] =
           (resp as any)?.data ?? (resp as any)?.items ?? (resp as any) ?? [];
         const found = list.find((d: any) => d.driverId === driverId);
-        const uid = (found as any)?.userId ?? driverId; // userId 없으면 driverId 문자열 사용
+        const uid = (found as any)?.userId ?? driverId;
         setUserIdForDriver(String(uid));
       })
       .catch(() => setUserIdForDriver(null));
   }, [token, driverId]);
 
-  /* 3) 배송중/완료 목록 — 배정 상품 API */
+  /* 3) 배송목록 */
   useEffect(() => {
     if (!token || !driverId) return;
 
@@ -150,49 +149,83 @@ const DriverDetail: React.FC = () => {
       .finally(() => setLoadingCompleted(false));
   }, [token, driverId]);
 
-  /* 4) (REST 제거) 초기 실시간 건강 로딩은 WebSocket으로만 처리 */
-
-  /* 4-1) WebSocket 구독 (관리자 웹, 성북구) — wsClient 대신 직접 연결 */
+  /* 4) WebSocket 직접 연결 */
   useEffect(() => {
     if (!token || !profile) return;
 
-    // BASE_URL 예: http://116.39.208.72:26443
-    const host = BASE_URL.replace(/^http/, "ws"); // ws(s)로 변경
-    const region = encodeURIComponent("성북구");
+    const DEBUG = localStorage.getItem("debug:ws") === "1";
+    const host = BASE_URL.replace(/^http/, "ws");
+
+    // 기본: region 파라미터 제거(서버가 전체 브로드캐스트 지원 시)
+    // 필요하면 아래 regionQ를 만들어 붙이세요.
+    // const regionQ = encodeURIComponent(
+    //   (profile.regions && profile.regions[0]) || profile.residence || "성북구"
+    // );
+    // const wsUrl = `${host}/ws/location?token=${encodeURIComponent(token as string)}&as=web&region=${regionQ}`;
+
     const wsUrl = `${host}/ws/location?token=${encodeURIComponent(
       token as string
-    )}&as=web&region=${region}`;
+    )}&as=web`;
+
+    if (DEBUG) console.log("[WS connect]", wsUrl);
 
     const ws = new WebSocket(wsUrl);
 
+    ws.onopen = () => {
+      if (DEBUG) console.log("[WS open]");
+    };
+
     ws.onmessage = (evt: MessageEvent<string>) => {
       try {
+        if (DEBUG) console.log("[WS raw]", evt.data);
         const msg: WSMessage = JSON.parse(evt.data);
 
         if (msg.type === "health") {
-          const p = msg.payload;
-          if (p?.driverId === profile.driverId) {
-            const hr = Number(p.heartRate ?? 0);
-            const st = Number(p.step ?? 0);
-            const recordedAt = p.recordedAt || p.capturedAt || "";
+          const p = msg.payload || {};
+          const matchByDriver =
+            typeof p.driverId === "number" && p.driverId === profile.driverId;
+          const matchByUser =
+            p.userId !== undefined &&
+            userIdForDriver &&
+            String(p.userId) === String(userIdForDriver);
 
-            setRealtime((prev) => ({
-              userId:
-                (userIdForDriver ??
-                  prev?.userId ??
-                  (p.userId !== undefined ? String(p.userId) : "")) ||
-                "",
-              heartRate: hr,
-              step: st,
-              capturedAt: recordedAt,
-            }));
+          if (!(matchByDriver || matchByUser)) {
+            if (DEBUG) console.log("[WS skip] not this driver", p);
+            return;
           }
-        } else {
-          // msg.type === "location" 인 케이스는 여기서 필요 시 처리
+
+          const hr = Number(p.heartRate ?? 0);
+          const st = Number(p.step ?? 0);
+          const recordedAt = p.recordedAt || p.capturedAt || "";
+
+          setRealtime((prev) => ({
+            userId:
+              (userIdForDriver ??
+                prev?.userId ??
+                (p.userId !== undefined ? String(p.userId) : "")) ||
+              "",
+            heartRate: hr,
+            step: st,
+            capturedAt: recordedAt,
+          }));
+
+          if (DEBUG)
+            console.log("[WS health -> setRealtime]", { hr, st, recordedAt });
+        } else if (msg.type === "location") {
+          // 위치 메시지를 추후 사용할 때 여기에 추가
+          if (DEBUG) console.log("[WS location]", msg.payload);
         }
-      } catch {
-        // 메시지 파싱 실패 무시
+      } catch (e) {
+        if (DEBUG) console.warn("[WS parse error]", e);
       }
+    };
+
+    ws.onerror = (e) => {
+      if (DEBUG) console.warn("[WS error]", e);
+    };
+
+    ws.onclose = () => {
+      if (DEBUG) console.log("[WS close]");
     };
 
     return () => {
@@ -202,15 +235,7 @@ const DriverDetail: React.FC = () => {
     };
   }, [token, profile, userIdForDriver]);
 
-  /* 5) (REST 제거) 위험일 때 심박수 타임라인 호출 로직 삭제
-        - 필요 시 WebSocket 기반의 별도 타임라인 스트림/버퍼링으로 대체하세요.
-  */
-  const isDanger = useMemo(
-    () => (profile?.conditionStatus ?? "") === "위험",
-    [profile]
-  );
-
-  /* 상품 카드 클릭 시 타임라인 */
+  /* 타임라인 로딩 */
   const loadProductTimeline = async (pid: number) => {
     setSelectedProductId(pid);
     setLoadingProductTimeline(true);
@@ -224,32 +249,35 @@ const DriverDetail: React.FC = () => {
     }
   };
 
-  // 현재 탭 데이터/로딩
+  /* 뷰 계산 */
+  const isDanger = useMemo(
+    () => (profile?.conditionStatus ?? "") === "위험",
+    [profile]
+  );
+
   const currentList = activeTab === "ONGOING" ? ongoing : completed;
   const loadingCurrent =
     activeTab === "ONGOING" ? loadingOngoing : loadingCompleted;
 
-  // 라벨/테마
   const condition = profile?.conditionStatus ?? "알수없음";
   const conditionBadgeClass =
     condition === "위험" ? "danger" : condition === "불안" ? "warn" : "good";
   const profileCardClass = `profile-card ${isDanger ? "danger" : ""}`;
   const healthCardClass = `health-card ${isDanger ? "danger" : ""}`;
 
-  // 특이사항(좋음/불안일 때만 심박 기반 표시)
   const liveHeartRate = Number(realtime?.heartRate ?? 0);
   const riskNote = useMemo(() => {
-    if (isDanger) return null; // 위험은 별도 처리(타임라인 제거됨)
+    if (isDanger) return null;
     if (liveHeartRate >= 150) return "고심박";
     if (liveHeartRate > 0 && liveHeartRate <= 45) return "저심박";
     return null;
   }, [isDanger, liveHeartRate]);
 
-  // 포맷터
   const fmtNum = (n?: number | null) => Number(n ?? 0).toLocaleString();
   const fmtTime = (iso?: string | null) =>
     iso ? new Date(iso).toLocaleString("ko-KR") : "-";
 
+  /* 렌더 */
   if (loadingProfile) {
     return (
       <div className="driver-layout">
@@ -333,7 +361,7 @@ const DriverDetail: React.FC = () => {
             </div>
           </div>
 
-          {/* 건강 패널 — 실시간 건강 데이터 (WS만 사용) */}
+          {/* 건강 패널 — 실시간 건강 데이터(WS) */}
           <div className={healthCardClass}>
             <h4>건강 상태</h4>
             <>
@@ -345,8 +373,6 @@ const DriverDetail: React.FC = () => {
                 <span>🟡 걸음수</span>
                 <strong>{fmtNum(realtime?.step ?? 0)} 걸음</strong>
               </div>
-
-              {/* 작은 글씨 + 오른쪽 정렬 업데이트 시간 */}
               <div className="info-row info-row--update">
                 <span className="update-time">
                   업데이트 {fmtTime(realtime?.capturedAt ?? null)}
@@ -354,8 +380,6 @@ const DriverDetail: React.FC = () => {
               </div>
             </>
           </div>
-
-          {/* (REST 제거) 위험일 때 심박수 타임라인 UI도 제거됨 */}
         </section>
 
         {/* 중앙 패널 */}
@@ -464,7 +488,7 @@ const DriverDetail: React.FC = () => {
         </section>
       </div>
 
-      {/* 하단 고정 Footer (검색 → /manage 이동) */}
+      {/* 하단 고정 Footer */}
       <Footer
         onSearch={(ff: FooterFilters, nq?: string) =>
           navigate("/manage", { state: { ff, nq } })
