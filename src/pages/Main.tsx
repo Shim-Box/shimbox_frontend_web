@@ -39,17 +39,8 @@ const statusOrder: Record<StatusKey, number> = {
   좋음: 2,
   알수없음: 3,
 };
-const statusClassOf = (status: StatusKey): "good" | "warn" | "danger" => {
-  switch (status) {
-    case "위험":
-      return "danger";
-    case "불안":
-      return "warn";
-    case "좋음":
-    default:
-      return "good";
-  }
-};
+const statusClassOf = (status: StatusKey): "good" | "warn" | "danger" =>
+  status === "위험" ? "danger" : status === "불안" ? "warn" : "good";
 
 /** products 응답에서 배송완료/전체 개수 계산 */
 function summarizeProducts(items: DeliveryItem[]) {
@@ -61,6 +52,22 @@ function summarizeProducts(items: DeliveryItem[]) {
     : 0;
   return { total, delivered };
 }
+
+/** 지역 선택 모달에서 쓸 구 옵션 */
+const SEOUL_GU = [
+  "구로구",
+  "양천구",
+  "강서구",
+  "영등포구",
+  "금천구",
+  "동작구",
+  "성북구",
+  "강북구",
+  "동대문구",
+  "성동구",
+  "종로구",
+  "중구",
+];
 
 const Main: React.FC = () => {
   const { token } = useContext(AuthContext);
@@ -76,26 +83,52 @@ const Main: React.FC = () => {
   const [miniList, setMiniList] = useState<MiniDriverCard[]>([]);
   const [loadingList, setLoadingList] = useState<boolean>(false);
 
-  // 정렬/필터 모드
+  // 정렬/필터 모드 (우측 목록)
   const [dangerMode, setDangerMode] = useState<DangerMode>("status");
 
-  // 출근 중만 필터
+  /** 👉 지역 선택 카드/모달 상태 */
+  const [regionOpen, setRegionOpen] = useState(false);
+  const [selCity] = useState("서울특별시"); // 현재는 서울만 지원
+  const [selGu, setSelGu] = useState<string>(""); // 선택된 구(없으면 전체)
+
+  /** 지도에는 출근 + 출근전 모두 표시 */
+  const mapSource = useMemo(
+    () =>
+      miniList.filter(
+        (m) =>
+          (m.attendance ?? "").trim() === "출근" ||
+          (m.attendance ?? "").trim() === "출근전"
+      ),
+    [miniList]
+  );
+
+  /** 선택한 구로 지도/마커 필터링 */
+  const mapFiltered = useMemo(() => {
+    if (!selGu) return mapSource;
+    return mapSource.filter((m) => (m.residence || "").includes(selGu));
+  }, [mapSource, selGu]);
+
+  const mapAddresses = useMemo(
+    () => mapFiltered.map((m) => m.residence || ""),
+    [mapFiltered]
+  );
+
+  /** 우측 출근자 목록(기존 로직 유지) */
   const workingList = useMemo(
     () => miniList.filter((m) => (m.attendance ?? "").trim() === "출근"),
     [miniList]
   );
 
-  // 위험 기사 수
+  // 위험 기사 수 (출근자 기준)
   const dangerCount = useMemo(
     () => workingList.filter((m) => m.status === "위험").length,
     [workingList]
   );
   const hasDanger = dangerCount > 0;
 
-  // 화면에 노출되는 목록(출근 중 필터 → 모드별 정렬/필터)
+  // 오른쪽 목록 노출/정렬
   const shownList = useMemo(() => {
     let base = [...workingList];
-
     if (dangerMode === "dangerOnly") {
       base = base.filter((m) => m.status === "위험");
       base.sort((a, b) => {
@@ -109,72 +142,50 @@ const Main: React.FC = () => {
       base.sort((a, b) => {
         const sa = statusOrder[a.status] ?? 3;
         const sb = statusOrder[b.status] ?? 3;
-        if (sa !== sb) return sa - sb;
-        return a.name.localeCompare(b.name, "ko");
+        return sa !== sb ? sa - sb : a.name.localeCompare(b.name, "ko");
       });
     }
     return base;
   }, [workingList, dangerMode]);
 
-  // 지도 마커 주소(현재 보여지는 카드 기준)
-  const mapAddresses = useMemo(
-    () => shownList.map((m) => m.residence || ""),
-    [shownList]
-  );
-
-  // 패널 클릭 시 정렬/필터 모드 순환
+  // 모드 순환
   const cycleMode = () => {
     if (hasDanger) {
-      setDangerMode((prev) =>
-        prev === "status"
-          ? "dangerOnly"
-          : prev === "dangerOnly"
-          ? "id"
-          : "status"
+      setDangerMode((p) =>
+        p === "status" ? "dangerOnly" : p === "dangerOnly" ? "id" : "status"
       );
     } else {
-      setDangerMode((prev) => (prev === "status" ? "id" : "status"));
+      setDangerMode((p) => (p === "status" ? "id" : "status"));
     }
   };
 
-  /** 상단 통계 로딩 (실데이터) */
+  /** 상단 통계 로딩 */
   useEffect(() => {
     if (!token) return;
     let mounted = true;
-
     (async () => {
       try {
         setLoadingStats(true);
-
-        // 승인 목록
         const approvedRes = await ApiService.fetchApprovedUsers({
           page: 1,
           size: 1000,
         });
         const list: ApprovedUser[] = approvedRes.data ?? [];
-
-        // 전체 기사 수
         const approvedCount = approvedRes.totalElements ?? list.length;
-
-        // 출근자 수
         const onDuty = list.filter((d) => d.attendance === "출근").length;
-
-        // 오늘 누적 배송(완료 합계)
         const completedCounts = await Promise.all(
           list.map(async (d) => {
             try {
               const items = await ApiService.fetchDriverAssignedProducts(
                 d.driverId
               );
-              const { delivered } = summarizeProducts(items);
-              return delivered;
+              return summarizeProducts(items).delivered;
             } catch {
               return 0;
             }
           })
         );
-        const completedSum = completedCounts.reduce((acc, n) => acc + n, 0);
-
+        const completedSum = completedCounts.reduce((a, n) => a + n, 0);
         if (!mounted) return;
         setTotalApproved(approvedCount);
         setOnDutyCount(onDuty);
@@ -189,29 +200,23 @@ const Main: React.FC = () => {
         if (mounted) setLoadingStats(false);
       }
     })();
-
     return () => {
       mounted = false;
     };
   }, [token]);
 
-  /** 우측 미니 카드 목록 로딩 (실데이터) */
+  /** 승인 목록 + 배송건수 → 미니카드 */
   useEffect(() => {
     if (!token) return;
     let mounted = true;
-
     (async () => {
       try {
         setLoadingList(true);
-
-        // 1) 승인된 기사들
         const approvedRes = await ApiService.fetchApprovedUsers({
           page: 1,
           size: 1000,
         });
         const list: ApprovedUser[] = approvedRes.data ?? [];
-
-        // 2) 카드 모델로 기본 매핑
         const baseCards: MiniDriverCard[] = list.map((u) => ({
           driverId: u.driverId,
           name: u.name,
@@ -222,8 +227,6 @@ const Main: React.FC = () => {
           delivered: 0,
           total: 0,
         }));
-
-        // 3) 각 기사별 배정 상품 조회 → 배송건수 반영
         const enriched = await Promise.all(
           baseCards.map(async (card) => {
             try {
@@ -237,7 +240,6 @@ const Main: React.FC = () => {
             }
           })
         );
-
         if (!mounted) return;
         setMiniList(enriched);
       } catch (e) {
@@ -248,7 +250,6 @@ const Main: React.FC = () => {
         if (mounted) setLoadingList(false);
       }
     })();
-
     return () => {
       mounted = false;
     };
@@ -257,23 +258,20 @@ const Main: React.FC = () => {
   /** WebSocket (옵션) */
   useEffect(() => {
     if (!token) return;
-
     const disconnect = connectLocationWS({
       as: "web",
       region: "성북구",
       handlers: {
-        onLocation: (_msg: { type: "location"; payload: LocationPayload }) => {
-          // 필요시 지도/카드 갱신
-        },
-        onHealth: (_msg: { type: "health"; payload: HealthPayload }) => {
-          // 필요시 상태 갱신
-        },
+        onLocation: (_msg: {
+          type: "location";
+          payload: LocationPayload;
+        }) => {},
+        onHealth: (_msg: { type: "health"; payload: HealthPayload }) => {},
       },
       reconnect: true,
       maxRetries: 5,
       retryDelayMs: 2000,
     });
-
     return () => {
       disconnect();
     };
@@ -289,18 +287,29 @@ const Main: React.FC = () => {
       <Sidebar />
 
       <main className="main-content">
-        {/* 통계 카드 + 위험 패널 */}
+        {/* 상단: 지역 선택 카드 + 나머지 통계 + 위험 패널 */}
         <div className="stats">
-          <div className="stat-card" aria-busy={loadingStats}>
-            전체 기사 수
-            <br />
-            <strong>
-              {loadingStats ? "…" : totalApproved.toLocaleString()}명
-            </strong>
+          {/* ◀ 지역 선택 카드 (왼쪽 첫 칸 전용) */}
+          <div
+            className="stat-card region-card"
+            onClick={() => setRegionOpen(true)}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                setRegionOpen(true);
+              }
+            }}
+          >
+            <div className="region-title">
+              클릭해 기사분의 위치를 확인하세요
+            </div>
+            <div className="region-pill">{selGu ? selGu : "구 선택"}</div>
           </div>
 
           <div className="stat-card" aria-busy={loadingStats}>
-            현재 배송 중
+            현재 배송 중 기사 수
             <br />
             <strong>
               {loadingStats ? "…" : onDutyCount.toLocaleString()}명
@@ -308,14 +317,14 @@ const Main: React.FC = () => {
           </div>
 
           <div className="stat-card" aria-busy={loadingStats}>
-            오늘 누적 배송
+            오늘 누적 배송 건수
             <br />
             <strong>
               {loadingStats ? "…" : totalCompleted.toLocaleString()}건
             </strong>
           </div>
 
-          {/* 위험 패널 (정렬/필터 모드 전환용) */}
+          {/* 위험 패널 */}
           <div
             className="stat-card warning clickable"
             role="button"
@@ -339,13 +348,15 @@ const Main: React.FC = () => {
           </div>
         </div>
 
-        {/* 지도 + 오른쪽 승인 기사 목록 (출근 중만) */}
+        {/* 지도 + 오른쪽 승인 기사 목록 (오른쪽은 출근자만) */}
         <div className="main-body">
           <div className="map-area">
             <DetailMap
               addresses={mapAddresses}
               level={7}
-              markerImageUrls={shownList.map(() => "/images/driverMarker.png")}
+              markerImageUrls={mapFiltered.map(
+                () => "/images/driverMarker.png"
+              )}
               markerSize={{ width: 35, height: 45 }}
               onMarkerClick={() => {}}
             />
@@ -355,7 +366,6 @@ const Main: React.FC = () => {
             {loadingList && (
               <div className="driver-mini-card">목록을 불러오는 중…</div>
             )}
-
             {!loadingList &&
               shownList.map((m) => {
                 const ratio =
@@ -363,7 +373,6 @@ const Main: React.FC = () => {
                     ? Math.min(100, Math.round((m.delivered / m.total) * 100))
                     : 0;
                 const statusClass = statusClassOf(m.status);
-
                 return (
                   <div
                     key={m.driverId}
@@ -419,6 +428,44 @@ const Main: React.FC = () => {
           </aside>
         </div>
       </main>
+
+      {/* 지역 선택 모달 */}
+      {regionOpen && (
+        <div className="rf-backdrop" role="dialog" aria-modal="true">
+          <div className="rf-modal">
+            <button
+              className="rf-close"
+              aria-label="닫기"
+              onClick={() => setRegionOpen(false)}
+            >
+              ×
+            </button>
+            <div className="rf-title">
+              지역을 선택해 원하는 위치의 기사분을 확인하세요.
+            </div>
+            <div className="rf-row">
+              <select className="rf-select" value={selCity} disabled>
+                <option>서울특별시</option>
+              </select>
+              <select
+                className="rf-select"
+                value={selGu}
+                onChange={(e) => setSelGu(e.target.value)}
+              >
+                <option value="">구 선택</option>
+                {SEOUL_GU.map((g) => (
+                  <option key={g} value={g}>
+                    {g}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <button className="rf-primary" onClick={() => setRegionOpen(false)}>
+              완료
+            </button>
+          </div>
+        </div>
+      )}
 
       <Footer onSearch={handleFooterSearch} />
     </div>

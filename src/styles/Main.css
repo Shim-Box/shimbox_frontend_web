@@ -21,7 +21,7 @@ html {
   padding-bottom: 72px;
 }
 
-/* ───────── 통계 카드 ───────── */
+/* ───────── 통계/상단 영역 ───────── */
 .stats {
   display: flex;
   gap: 20px;
@@ -45,6 +45,34 @@ html {
   margin-top: 8px;
 }
 
+/* ◀ 지역 선택 카드(왼쪽 첫 칸) */
+.region-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 12px;
+  cursor: pointer;
+  border: 1px solid #e8f6ef;
+  background: #f6fffb;
+}
+.region-card:hover {
+  background: #f2fff8;
+}
+.region-title {
+  color: #16a34a;
+  font-weight: 700;
+  font-size: 13px;
+}
+.region-pill {
+  display: inline-block;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: #10b981;
+  color: #fff;
+  font-weight: 700;
+  width: fit-content;
+}
+
 /* 위험 패널 */
 .stat-card.warning {
   color: #e03131;
@@ -63,7 +91,6 @@ html {
 .stat-card.warning.clickable {
   cursor: pointer;
 }
-
 .danger-panel-content {
   display: flex;
   flex-direction: column;
@@ -74,6 +101,7 @@ html {
   font-weight: 800;
 }
 
+/* 본문 레이아웃 */
 .main-body {
   display: flex;
   gap: 20px;
@@ -90,7 +118,7 @@ html {
   overflow: hidden;
 }
 
-/* ───────── 오른쪽 사이드 패널 ───────── */
+/* 오른쪽 사이드 목록 */
 .right-side {
   width: var(--right-side-width);
   flex-shrink: 0;
@@ -100,7 +128,6 @@ html {
   max-height: calc(100vh - 220px);
   overflow-y: auto;
 }
-
 .right-side::-webkit-scrollbar {
   display: none;
 }
@@ -178,7 +205,6 @@ html {
   background: #ff4d4f;
 }
 
-/* 정보 행 */
 .mini-row {
   display: flex;
   justify-content: space-between;
@@ -193,7 +219,6 @@ html {
   font-weight: 600;
 }
 
-/* 진행 바 */
 .mini-progress {
   width: 100%;
   height: 6px;
@@ -213,4 +238,83 @@ html {
 }
 .mini-bar.danger {
   background: #ff4d4f;
+}
+
+/* ───────── 지역 선택 모달 ───────── */
+.rf-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(17, 17, 17, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 99998;
+}
+.rf-modal {
+  position: relative;
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.18), 0 2px 6px rgba(0, 0, 0, 0.08);
+  padding: 24px;
+  min-width: 440px;
+  box-sizing: border-box;
+}
+.rf-close {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: #666;
+  cursor: pointer;
+  font-size: 22px;
+  line-height: 1;
+  padding: 4px 6px;
+  border-radius: 8px;
+}
+.rf-close:hover {
+  background: #f3f4f6;
+}
+.rf-title {
+  color: #16a34a;
+  font-weight: 700;
+  font-size: 13px;
+  margin-bottom: 12px;
+  text-align: center;
+}
+.rf-row {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.rf-select {
+  flex: 1;
+  height: 38px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 0 10px;
+  font-size: 14px;
+  background: #fff;
+}
+.rf-primary {
+  display: block;
+  width: 100%;
+  height: 40px;
+  border: none;
+  border-radius: 10px;
+  background: #10b981;
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+.rf-primary:hover {
+  background: #0ea372;
+}
+
+@media (max-width: 600px) {
+  .rf-modal {
+    min-width: 0;
+    width: 90vw;
+  }
 }

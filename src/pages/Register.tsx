@@ -8,7 +8,7 @@ import { PendingUser, ApprovedUser } from "../models/AdminModels";
 import { AuthContext } from "../context/AuthContext";
 import Footer, { FooterFilters } from "../pages/Footer";
 
-/** ✅ 서버 허용 구 목록(구 이름만, 접두어 없음) */
+/** ✅ 서버 허용 구 목록 */
 const ALLOWED_GU = [
   "구로구",
   "양천구",
@@ -24,10 +24,9 @@ const ALLOWED_GU = [
   "중구",
 ] as const;
 
-/** 선택된 값을 서버가 기대하는 포맷으로 정규화(구 이름만 유지) */
+/** 선택된 값을 서버가 기대하는 포맷으로 정규화 */
 const normalizeRegion = (raw: string) => {
   if (!raw) return "";
-  // "서울특별시 마포구" 같은 값이 들어와도 "마포구"만 남김
   const s = raw.trim().replace(/^서울(?:특별시|시)?\s*/g, "");
   return s;
 };
