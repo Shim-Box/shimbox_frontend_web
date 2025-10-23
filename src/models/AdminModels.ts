@@ -113,6 +113,8 @@ export interface RealtimeHealthItem {
   step: number;
   heartRate: number;
   capturedAt: string;
+  score?: number; // 피로도(0~1 같은 점수)
+  level?: "좋음" | "경고" | "위험" | string;
 }
 
 // ───────────────── 실시간 위치(초기 로딩) ─────────────────
@@ -157,4 +159,16 @@ export interface AssignRegionResponse {
   driverName: string;
   region1: string;
   region2: string;
+}
+
+/** ───────────── 할당되지 않은 상품(신규) ───────────── */
+export interface UnassignedProduct {
+  productId: number;
+  productName: string;
+  recipientName: string;
+  recipientPhoneNumber: string;
+  address: string;
+  detailAddress: string;
+  postalCode: string;
+  deliveryImageUrl?: string | null;
 }

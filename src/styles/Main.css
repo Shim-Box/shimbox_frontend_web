@@ -45,7 +45,7 @@ html {
   margin-top: 8px;
 }
 
-/* ◀ 지역 선택 카드(왼쪽 첫 칸) */
+/* ◀ 지역 선택 카드 */
 .region-card {
   display: flex;
   flex-direction: column;
@@ -145,6 +145,11 @@ html {
   border-left: 5px solid transparent;
   cursor: pointer;
 }
+.driver-mini-card.pulse {
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+  box-shadow: 0 0 0 3px rgba(238, 64, 76, 0.15);
+}
+
 .driver-mini-card:focus {
   outline: 2px solid #2cd0ae55;
   outline-offset: 2px;
@@ -240,7 +245,6 @@ html {
   background: #ff4d4f;
 }
 
-/* ───────── 지역 선택 모달 ───────── */
 .rf-backdrop {
   position: fixed;
   inset: 0;

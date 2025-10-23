@@ -147,7 +147,6 @@ const Footer: React.FC<FooterProps> = ({
           </svg>
         </button>
 
-        {/* 중요: min-width:0 이 적용되는 래퍼 + max-width 애니메이션 */}
         <form className="footer-search-form" onSubmit={handleSubmit}>
           <input
             ref={inputRef}

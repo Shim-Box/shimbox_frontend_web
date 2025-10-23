@@ -12,6 +12,8 @@ import {
   AssignRegionRequest,
   AssignRegionResponse,
   ProductTimelineItem,
+  RealtimeHealthItem,
+  UnassignedProduct,
 } from "../models/AdminModels";
 import { PaginatedResponse } from "../models/PaginatedResponse";
 
@@ -238,12 +240,46 @@ export const ApiService = {
       .then(unwrap);
   },
 
-  fetchDriverAssignedProducts(driverId: number) {
+  /** 배송 상태별 필터 지원 + 404를 빈 배열로 안전 처리 */
+  fetchDriverAssignedProducts(
+    driverId: number,
+    shippingStatus?: "배송대기" | "배송시작" | "배송완료"
+  ) {
+    if (!driverId && driverId !== 0)
+      return Promise.resolve([] as DeliveryItem[]);
+
     return client
       .get<ApiResponse<DeliveryItem[]>>(
-        `api/v1/admin/driver/${driverId}/products`
+        `api/v1/admin/driver/${driverId}/products`,
+        {
+          params: shippingStatus ? { shippingStatus } : undefined,
+          validateStatus: (s) => s === 200 || s === 404,
+        }
       )
+      .then((res) => {
+        if (res.status === 404) return [] as DeliveryItem[];
+        return (res.data as ApiResponse<DeliveryItem[]>).data;
+      });
+  },
+
+  /** 실시간 건강 스냅샷 (초기 채우기/30초 보정용) */
+  fetchRealtimeHealth(region?: string) {
+    return client
+      .get<ApiResponse<RealtimeHealthItem[]>>("api/v1/admin/realtime/health", {
+        params: region ? { region } : undefined,
+      })
       .then(unwrap);
+  },
+
+  /**  할당되지 않은 상품 목록 */
+  fetchUnassignedProducts() {
+    return client
+      .get<ApiResponse<UnassignedProduct[]>>("api/v1/admin/products/unassigned")
+      .then(unwrap)
+      .catch((e: AxiosError) => {
+        if (e.response?.status === 404) return [] as UnassignedProduct[];
+        throw e;
+      });
   },
 };
 

@@ -1,5 +1,3 @@
-// lib/models/paginated_response.dart
-
 class PaginatedResponse<T> {
   final List<T> items;
   final int page;

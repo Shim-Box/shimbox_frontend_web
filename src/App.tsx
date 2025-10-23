@@ -8,7 +8,6 @@ import {
   Outlet,
 } from "react-router-dom";
 import { AuthProvider, AuthContext } from "./context/AuthContext";
-
 import Login from "./pages/Login";
 import Main from "./pages/Main";
 import Register from "./pages/Register";
@@ -16,6 +15,7 @@ import Manage from "./pages/Manage";
 import DriverDetail from "./pages/DriverDetail";
 import PopupNotice from "./components/PopupNotice";
 import { NotificationsProvider } from "./context/NotificationsProvider";
+import UnassignedProducts from "./pages/UnassignedProducts";
 
 const PrivateRoute: React.FC = () => {
   const { isLoggedIn, loading } = useContext(AuthContext);
@@ -51,6 +51,11 @@ function App() {
 
             {/* fallback */}
             <Route path="*" element={<Navigate to="/login" replace />} />
+
+            <Route
+              path="/products/unassigned"
+              element={<UnassignedProducts />}
+            />
           </Routes>
         </BrowserRouter>
       </NotificationsProvider>

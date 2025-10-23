@@ -134,15 +134,12 @@ export const NotificationsProvider: React.FC<{ children: React.ReactNode }> = ({
               lastDangerNotifiedAt.set(d.driverId, now);
             }
           } else {
-            // 위험이 아니면 타이머 초기화
             lastDangerNotifiedAt.delete(d.driverId);
           }
 
-          // 현재 상태 기억
           prevStatus.set(d.driverId, current);
         });
 
-        // 사라진 기사 정리
         const currentIds = new Set(list.map((d) => d.driverId));
         [...prevStatus.keys()].forEach((id) => {
           if (!currentIds.has(id)) {
@@ -150,12 +147,9 @@ export const NotificationsProvider: React.FC<{ children: React.ReactNode }> = ({
             lastDangerNotifiedAt.delete(id);
           }
         });
-      } catch {
-        // 실패는 무시(다음 주기 재시도)
-      }
+      } catch {}
     };
 
-    // 즉시 1회 + 주기 폴링
     tick();
     const iv = setInterval(tick, POLL_MS);
 

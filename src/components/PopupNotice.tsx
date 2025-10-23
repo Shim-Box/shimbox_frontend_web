@@ -1,4 +1,3 @@
-// src/components/PopupNotice.tsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useNotifications } from "../context/NotificationsProvider";
 import "../styles/NotificationPopup.css";

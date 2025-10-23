@@ -1,4 +1,3 @@
-// src/pages/Register.tsx
 import React, { useState, useEffect, useContext } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "../pages/Sidebar";
@@ -8,7 +7,7 @@ import { PendingUser, ApprovedUser } from "../models/AdminModels";
 import { AuthContext } from "../context/AuthContext";
 import Footer, { FooterFilters } from "../pages/Footer";
 
-/** ✅ 서버 허용 구 목록 */
+/** 서버 허용 구 목록 */
 const ALLOWED_GU = [
   "구로구",
   "양천구",
@@ -76,18 +75,15 @@ const Register: React.FC = () => {
     setShowAssign(true);
   };
 
-  /** 모달: 취소 */
   const closeAssignModal = () => {
     if (loading) return;
     setShowAssign(false);
   };
 
-  /** 모달: 완료 → (사전검증) 후 각 사용자 개별로 승인→배정 순차 처리 */
   const handleAssignConfirm = async () => {
     const r1 = normalizeRegion(region1);
     const r2 = normalizeRegion(region2);
 
-    // 공통 사전 검증 (여기서 탈락하면 아무도 처리 안 함)
     if (!r1 || !r2) {
       alert("두 개의 구를 모두 선택해주세요.");
       return;
@@ -115,25 +111,21 @@ const Register: React.FC = () => {
     try {
       setLoading(true);
 
-      // 이름/유저ID 맵 (요약 표시용)
+      // 이름/유저ID 맵
       const byId = new Map<number, PendingUser>(drivers.map((d) => [d.id, d]));
 
       const success: string[] = [];
       const failed: string[] = [];
 
-      // 선택한 사용자 "개별" 처리 (승인→driverId 찾기→배정). 한 명 실패해도 다음 사람 계속.
       for (const uid of checkedIds) {
         const who = byId.get(uid);
         const label = who ? `${who.name}(${uid})` : String(uid);
 
         try {
-          // (1) 이 사용자만 승인
           await ApiService.approveUsers([uid]);
 
-          // (2) 승인 반영 대기 (인덱스/조회 지연 대비)
           await new Promise((r) => setTimeout(r, 250));
 
-          // (3) 승인 목록에서 userId→driverId 찾기
           const approved = await ApiService.fetchApprovedUsers({
             page: 1,
             size: 1000,
@@ -144,7 +136,6 @@ const Register: React.FC = () => {
             throw new Error("driverId 매핑에 실패했습니다.");
           }
 
-          // (4) 지역 배정
           await ApiService.assignDriverRegion({
             driverId: me.driverId,
             region1: r1,
@@ -153,14 +144,12 @@ const Register: React.FC = () => {
 
           success.push(label);
         } catch (e: any) {
-          // 이 사용자만 실패로 표시 (이미 승인 호출이 된 경우 되돌릴 서버 API가 없다면 수동 조치 필요)
           const msg =
             e?.response?.data?.message ||
             e?.message ||
             "내부 서버 오류로 배정 실패";
           console.error(`승인/배정 실패 uid=${uid}:`, msg);
           failed.push(`${label} - ${msg}`);
-          // 다음 사용자 이어서 처리
         }
       }
 
@@ -171,7 +160,6 @@ const Register: React.FC = () => {
       if (!lines.length) lines.push("처리된 항목이 없습니다.");
       alert(lines.join("\n\n"));
 
-      // UI 정리
       setCheckedIds([]);
       setExpandedId(null);
       setShowAssign(false);

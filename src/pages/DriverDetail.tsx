@@ -2,7 +2,7 @@ import React, { useState, useEffect, useContext, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import Sidebar from "../pages/Sidebar";
 import "../styles/DriverDetail.css";
-import DetailMap from "../components/DetailMap";
+import DetailMap, { LatLng } from "../components/DetailMap";
 import { ApiService } from "../services/apiService";
 import {
   DeliveryItem,
@@ -14,19 +14,16 @@ import { AuthContext } from "../context/AuthContext";
 import Footer, { FooterFilters } from "../pages/Footer";
 import { BASE_URL } from "../env";
 
-/** ───────── WebSocket 수신 타입 ───────── */
+/** WS 메시지 */
 type WSHealthMsg = {
   type: "health";
   payload: {
     driverId?: number;
     userId?: string | number;
-    driverName?: string;
-    region?: string;
     heartRate?: number;
     step?: number;
     recordedAt?: string;
     capturedAt?: string;
-    timestamp?: number;
   };
 };
 
@@ -35,19 +32,15 @@ type WSLocationMsg = {
   payload: {
     driverId?: number;
     userId?: string | number;
-    driverName?: string;
-    region?: string;
     lat: number;
     lng: number;
     capturedAt?: string;
-    addressShort?: string;
     timestamp?: number;
   };
 };
-
 type WSMessage = WSHealthMsg | WSLocationMsg;
 
-/** 실시간 건강 로컬 타입 */
+/** 실시간 건강 */
 type RealtimeHealth = {
   userId: string;
   heartRate: number;
@@ -59,17 +52,15 @@ const DriverDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const { token } = useContext(AuthContext);
   const navigate = useNavigate();
-
   const driverId = Number(id);
 
-  // 프로필
   const [profile, setProfile] = useState<DriverProfile | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
 
-  // 이 driverId에 대응하는 userId(WS 매칭용)
   const [userIdForDriver, setUserIdForDriver] = useState<string | null>(null);
+  const [isOnDuty, setIsOnDuty] = useState<boolean>(false);
 
-  // 배송 목록
+  // 목록
   const [ongoing, setOngoing] = useState<DeliveryItem[]>([]);
   const [completed, setCompleted] = useState<DeliveryItem[]>([]);
   const [loadingOngoing, setLoadingOngoing] = useState(false);
@@ -78,10 +69,11 @@ const DriverDetail: React.FC = () => {
     "ONGOING"
   );
 
-  // 실시간 건강(WS)
+  // 실시간
   const [realtime, setRealtime] = useState<RealtimeHealth | null>(null);
+  const [realtimeLoc, setRealtimeLoc] = useState<LatLng | null>(null);
 
-  // 상품 타임라인
+  // 타임라인
   const [selectedProductId, setSelectedProductId] = useState<number | null>(
     null
   );
@@ -90,7 +82,7 @@ const DriverDetail: React.FC = () => {
   );
   const [loadingProductTimeline, setLoadingProductTimeline] = useState(false);
 
-  /* 1) 기사 프로필 */
+  // 프로필
   useEffect(() => {
     if (!token || !driverId) return;
     setLoadingProfile(true);
@@ -100,7 +92,7 @@ const DriverDetail: React.FC = () => {
       .finally(() => setLoadingProfile(false));
   }, [token, driverId]);
 
-  /* 2) 승인목록에서 해당 driverId → userId 매핑 */
+  // 승인 목록에서 userId / attendance 매핑
   useEffect(() => {
     if (!token || !driverId) return;
     ApiService.fetchApprovedUsers({ page: 1, size: 1000 })
@@ -110,74 +102,57 @@ const DriverDetail: React.FC = () => {
         const found = list.find((d: any) => d.driverId === driverId);
         const uid = (found as any)?.userId ?? driverId;
         setUserIdForDriver(String(uid));
+        setIsOnDuty(((found as any)?.attendance ?? "").trim() === "출근");
       })
-      .catch(() => setUserIdForDriver(null));
+      .catch(() => {
+        setUserIdForDriver(null);
+        setIsOnDuty(false);
+      });
   }, [token, driverId]);
 
-  /* 3) 배송목록 */
+  // 배송 목록 — 서버 필터 사용 (배송대기+배송시작=진행중, 배송완료=완료)
   useEffect(() => {
     if (!token || !driverId) return;
 
-    setLoadingOngoing(true);
-    ApiService.fetchDriverAssignedProducts(driverId)
-      .then((list) =>
-        setOngoing(
-          Array.isArray(list)
-            ? list.filter((i) => {
-                const s = String(i.shippingStatus).trim().toUpperCase();
-                return s !== "배송완료" && s !== "DELIVERED";
-              })
-            : []
-        )
-      )
-      .catch(() => setOngoing([]))
-      .finally(() => setLoadingOngoing(false));
+    const load = async () => {
+      try {
+        setLoadingOngoing(true);
+        setLoadingCompleted(true);
 
-    setLoadingCompleted(true);
-    ApiService.fetchDriverAssignedProducts(driverId)
-      .then((list) =>
-        setCompleted(
-          Array.isArray(list)
-            ? list.filter((i) => {
-                const s = String(i.shippingStatus).trim().toUpperCase();
-                return s === "배송완료" || s === "DELIVERED";
-              })
-            : []
-        )
-      )
-      .catch(() => setCompleted([]))
-      .finally(() => setLoadingCompleted(false));
+        const [waitList, startList, doneList] = await Promise.all([
+          ApiService.fetchDriverAssignedProducts(driverId, "배송대기"),
+          ApiService.fetchDriverAssignedProducts(driverId, "배송시작"),
+          ApiService.fetchDriverAssignedProducts(driverId, "배송완료"),
+        ]);
+
+        setOngoing([...(waitList ?? []), ...(startList ?? [])]);
+        setCompleted(doneList ?? []);
+      } catch {
+        setOngoing([]);
+        setCompleted([]);
+      } finally {
+        setLoadingOngoing(false);
+        setLoadingCompleted(false);
+      }
+    };
+
+    load();
   }, [token, driverId]);
 
-  /* 4) WebSocket 직접 연결 */
+  // 4) WS 연결 (건강/위치)
   useEffect(() => {
     if (!token || !profile) return;
 
-    const DEBUG = localStorage.getItem("debug:ws") === "1";
     const host = BASE_URL.replace(/^http/, "ws");
-
-    // 기본: region 파라미터 제거(서버가 전체 브로드캐스트 지원 시)
-    // 필요하면 아래 regionQ를 만들어 붙이세요.
-    // const regionQ = encodeURIComponent(
-    //   (profile.regions && profile.regions[0]) || profile.residence || "성북구"
-    // );
-    // const wsUrl = `${host}/ws/location?token=${encodeURIComponent(token as string)}&as=web&region=${regionQ}`;
-
     const wsUrl = `${host}/ws/location?token=${encodeURIComponent(
       token as string
     )}&as=web`;
-
-    if (DEBUG) console.log("[WS connect]", wsUrl);
+    const DEBUG = localStorage.getItem("debug:ws") === "1";
 
     const ws = new WebSocket(wsUrl);
 
-    ws.onopen = () => {
-      if (DEBUG) console.log("[WS open]");
-    };
-
     ws.onmessage = (evt: MessageEvent<string>) => {
       try {
-        if (DEBUG) console.log("[WS raw]", evt.data);
         const msg: WSMessage = JSON.parse(evt.data);
 
         if (msg.type === "health") {
@@ -188,16 +163,11 @@ const DriverDetail: React.FC = () => {
             p.userId !== undefined &&
             userIdForDriver &&
             String(p.userId) === String(userIdForDriver);
-
-          if (!(matchByDriver || matchByUser)) {
-            if (DEBUG) console.log("[WS skip] not this driver", p);
-            return;
-          }
+          if (!(matchByDriver || matchByUser)) return;
 
           const hr = Number(p.heartRate ?? 0);
           const st = Number(p.step ?? 0);
           const recordedAt = p.recordedAt || p.capturedAt || "";
-
           setRealtime((prev) => ({
             userId:
               (userIdForDriver ??
@@ -208,24 +178,28 @@ const DriverDetail: React.FC = () => {
             step: st,
             capturedAt: recordedAt,
           }));
-
-          if (DEBUG)
-            console.log("[WS health -> setRealtime]", { hr, st, recordedAt });
+          if (DEBUG) console.log("[WS health] hr:", hr, "st:", st);
         } else if (msg.type === "location") {
-          // 위치 메시지를 추후 사용할 때 여기에 추가
-          if (DEBUG) console.log("[WS location]", msg.payload);
+          const p = msg.payload || ({} as any);
+          const matchByDriver =
+            typeof p.driverId === "number" && p.driverId === profile.driverId;
+          const matchByUser =
+            p.userId !== undefined &&
+            userIdForDriver &&
+            String(p.userId) === String(userIdForDriver);
+          if (!(matchByDriver || matchByUser)) return;
+
+          if (isOnDuty) {
+            if (typeof p.lat === "number" && typeof p.lng === "number") {
+              setRealtimeLoc({ lat: p.lat, lng: p.lng });
+            }
+          } else {
+            setRealtimeLoc(null);
+          }
+          if (DEBUG)
+            console.log("[WS location] setRealtimeLoc", p?.lat, p?.lng);
         }
-      } catch (e) {
-        if (DEBUG) console.warn("[WS parse error]", e);
-      }
-    };
-
-    ws.onerror = (e) => {
-      if (DEBUG) console.warn("[WS error]", e);
-    };
-
-    ws.onclose = () => {
-      if (DEBUG) console.log("[WS close]");
+      } catch {}
     };
 
     return () => {
@@ -233,9 +207,8 @@ const DriverDetail: React.FC = () => {
         ws.close();
       } catch {}
     };
-  }, [token, profile, userIdForDriver]);
+  }, [token, profile, userIdForDriver, isOnDuty]);
 
-  /* 타임라인 로딩 */
   const loadProductTimeline = async (pid: number) => {
     setSelectedProductId(pid);
     setLoadingProductTimeline(true);
@@ -249,16 +222,13 @@ const DriverDetail: React.FC = () => {
     }
   };
 
-  /* 뷰 계산 */
   const isDanger = useMemo(
     () => (profile?.conditionStatus ?? "") === "위험",
     [profile]
   );
-
   const currentList = activeTab === "ONGOING" ? ongoing : completed;
   const loadingCurrent =
     activeTab === "ONGOING" ? loadingOngoing : loadingCompleted;
-
   const condition = profile?.conditionStatus ?? "알수없음";
   const conditionBadgeClass =
     condition === "위험" ? "danger" : condition === "불안" ? "warn" : "good";
@@ -277,7 +247,6 @@ const DriverDetail: React.FC = () => {
   const fmtTime = (iso?: string | null) =>
     iso ? new Date(iso).toLocaleString("ko-KR") : "-";
 
-  /* 렌더 */
   if (loadingProfile) {
     return (
       <div className="driver-layout">
@@ -306,11 +275,15 @@ const DriverDetail: React.FC = () => {
     );
   }
 
+  const mapCoords = isOnDuty && realtimeLoc ? [realtimeLoc] : [];
+  const mapCenter = mapCoords[0];
+  const mapLevel = 6;
+
   return (
     <div className="driver-layout">
       <Sidebar />
       <div className="driver-detail-container">
-        {/* 왼쪽 프로필 패널 */}
+        {/* 왼쪽 프로필 */}
         <section className="left-panel">
           <div className={profileCardClass}>
             <img
@@ -338,7 +311,6 @@ const DriverDetail: React.FC = () => {
               </span>
             </div>
 
-            {/* (좋음/불안)에서만 특이사항 노출 */}
             {riskNote && (
               <div className="info-row">
                 <span className="info-label">위험 특이사항</span>
@@ -361,7 +333,6 @@ const DriverDetail: React.FC = () => {
             </div>
           </div>
 
-          {/* 건강 패널 — 실시간 건강 데이터(WS) */}
           <div className={healthCardClass}>
             <h4>건강 상태</h4>
             <>
@@ -386,11 +357,17 @@ const DriverDetail: React.FC = () => {
         <section className="center-panel">
           <div className="delivery-wrapper">
             <div className="driver-detail-map-area">
-              <DetailMap addresses={[profile.residence]} level={3} />
+              <DetailMap
+                coords={mapCoords}
+                centerCoord={mapCenter}
+                level={mapLevel}
+                markerImageUrls={mapCoords.map(
+                  () => "/images/driverMarker.png"
+                )}
+              />
             </div>
 
             <div className="delivery-bottom-section">
-              {/* 배송 목록 */}
               <div className="delivery-list">
                 <h4>
                   배송 목록 <span className="count">{currentList.length}</span>
@@ -454,7 +431,6 @@ const DriverDetail: React.FC = () => {
                 )}
               </div>
 
-              {/* 우측: 선택 상품 타임라인 */}
               <div className="right-panel">
                 <h4>상품 타임라인</h4>
                 {!selectedProductId ? (
@@ -488,7 +464,6 @@ const DriverDetail: React.FC = () => {
         </section>
       </div>
 
-      {/* 하단 고정 Footer */}
       <Footer
         onSearch={(ff: FooterFilters, nq?: string) =>
           navigate("/manage", { state: { ff, nq } })

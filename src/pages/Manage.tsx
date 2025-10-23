@@ -8,7 +8,6 @@ import { ApprovedUser } from "../models/AdminModels";
 import { AuthContext } from "../context/AuthContext";
 import Footer, { FooterFilters } from "../pages/Footer";
 
-// ✅ 좁은 리터럴 타입 정의 (API 시그니처와 일치)
 type Attendance = "출근전" | "출근" | "퇴근";
 type Condition = "위험" | "불안" | "좋음";
 
@@ -56,7 +55,6 @@ const Manage: React.FC = () => {
 
   useEffect(() => {
     loadApproved();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     token,
     filters.attendance,

@@ -197,7 +197,6 @@
   cursor: not-allowed;
 }
 
-/* 작은 화면 대응 */
 @media (max-width: 480px) {
   .detail-box {
     justify-content: center;
