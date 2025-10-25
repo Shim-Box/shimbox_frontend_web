@@ -139,10 +139,12 @@ body,
 
 .driver-detail-map-area {
   background: #e6e6e6;
-  height: 400px;
+  height: 420px;       
+  min-height: 320px;
   border-radius: 8px;
   overflow: hidden;
   flex-shrink: 0;
+  position: relative;
 }
 
 .delivery-bottom-section {

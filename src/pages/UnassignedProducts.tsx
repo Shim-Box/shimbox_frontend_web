@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, useContext } from "react";
+import React, { useEffect, useMemo, useState, useContext, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "../pages/Sidebar";
 import "../styles/UnassignedProducts.css";
@@ -17,14 +17,11 @@ type UnassignedItem = {
   deliveryImageUrl?: string | null;
 };
 
-type FieldKey =
-  | "ALL"
-  | "productName"
-  | "recipientName"
-  | "address"
-  | "postalCode";
+type FieldKey = "ALL" | "productName" | "recipientName" | "address" | "postalCode";
 
 const PAGE_SIZE = 20;
+const ANIM_MS = 450; // CSS와 동일(0.85s)
+const GAP_MS = 80;  // 다음 줄로 넘어가기 전 약간의 텀
 
 const UnassignedProduct: React.FC = () => {
   const { token } = useContext(AuthContext);
@@ -41,6 +38,12 @@ const UnassignedProduct: React.FC = () => {
 
   // 선택 상태(상품 ID 집합) — 페이지 이동/검색 변화에도 유지
   const [selected, setSelected] = useState<Set<number>>(new Set());
+
+  // 애니메이션 중인 행(사라질 예정)
+  const [leaving, setLeaving] = useState<Set<number>>(new Set());
+
+  // 헤더 전체선택 체크박스 ref(일부 선택 시 indeterminate)
+  const headerCheckRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (!token) return;
@@ -59,13 +62,10 @@ const UnassignedProduct: React.FC = () => {
     const lower = q.toLowerCase();
     const match = (it: UnassignedItem) => {
       const addrFull = `${it.address ?? ""} ${it.detailAddress ?? ""}`.trim();
-      if (field === "productName")
-        return (it.productName ?? "").toLowerCase().includes(lower);
-      if (field === "recipientName")
-        return (it.recipientName ?? "").toLowerCase().includes(lower);
+      if (field === "productName") return (it.productName ?? "").toLowerCase().includes(lower);
+      if (field === "recipientName") return (it.recipientName ?? "").toLowerCase().includes(lower);
       if (field === "address") return addrFull.toLowerCase().includes(lower);
-      if (field === "postalCode")
-        return (it.postalCode ?? "").toLowerCase().includes(lower);
+      if (field === "postalCode") return (it.postalCode ?? "").toLowerCase().includes(lower);
 
       return (
         (it.productName ?? "").toLowerCase().includes(lower) ||
@@ -90,11 +90,18 @@ const UnassignedProduct: React.FC = () => {
     return filtered.slice(start, start + PAGE_SIZE);
   }, [filtered, page]);
 
-  // 현재 페이지 전체 선택 여부
-  const allCheckedCurrentPage = useMemo(() => {
-    if (pageData.length === 0) return false;
-    return pageData.every((it) => selected.has(it.productId));
-  }, [pageData, selected]);
+  // (수정) 필터 결과 전체 기준 전체선택 여부
+  const allCheckedFiltered = useMemo(() => {
+    if (filtered.length === 0) return false;
+    return filtered.every((it) => selected.has(it.productId));
+  }, [filtered, selected]);
+
+  // (선택 일부인 경우) 헤더 체크박스 indeterminate 반영
+  useEffect(() => {
+    if (!headerCheckRef.current) return;
+    const someChecked = filtered.some((it) => selected.has(it.productId));
+    headerCheckRef.current.indeterminate = someChecked && !allCheckedFiltered;
+  }, [filtered, selected, allCheckedFiltered]);
 
   const toggleOne = (id: number, checked: boolean) => {
     setSelected((prev) => {
@@ -105,17 +112,29 @@ const UnassignedProduct: React.FC = () => {
     });
   };
 
-  const togglePageAll = (checked: boolean) => {
+  // (수정) 헤더 전체선택: 필터 결과 전체(모든 페이지) 토글
+  const toggleFilteredAll = (checked: boolean) => {
     setSelected((prev) => {
-      const ns = new Set(prev);
-      for (const it of pageData) {
-        if (checked) ns.add(it.productId);
-        else ns.delete(it.productId);
+      if (checked) {
+        return new Set(filtered.map((it) => it.productId));
       }
+      // 해제
+      const ns = new Set(prev);
+      filtered.forEach((it) => ns.delete(it.productId));
       return ns;
     });
   };
 
+  // 기존 "전체 선택" 버튼(필터 결과 전체)과 동일 동작
+  const toggleAllPages = () => {
+    setSelected((prev) => {
+      const allIds = filtered.map((it) => it.productId);
+      const allSelected = allIds.length > 0 && allIds.every((id) => prev.has(id));
+      return allSelected ? new Set<number>() : new Set(allIds);
+    });
+  };
+
+  // 페이지네이션 버튼
   const pageButtons = useMemo(() => {
     const maxButtons = 7;
     let start = Math.max(1, page - Math.floor(maxButtons / 2));
@@ -128,20 +147,47 @@ const UnassignedProduct: React.FC = () => {
 
   const go = (p: number) => setPage(Math.min(totalPages, Math.max(1, p)));
 
-  const handleAssignSelected = () => {
-    const ids = Array.from(selected);
-    if (ids.length === 0) return;
-    alert(
-      `선택 배정: ${ids.length}건\n${ids.slice(0, 20).join(", ")}${
-        ids.length > 20 ? " ..." : ""
-      }`
-    );
+  // 순차(정말 한 줄씩) 애니메이션 + 제거
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  const animateAssignAndRemove = async (ids: number[]) => {
+    for (const id of ids) {
+      // 1) 애니메이션 시작
+      setLeaving((prev) => new Set([...prev, id]));
+
+      // 2) 애니메이션 시간만큼 대기
+      await sleep(ANIM_MS);
+
+      // 3) 실제 제거
+      setItems((prev) => prev.filter((it) => it.productId !== id));
+      setSelected((prev) => {
+        const ns = new Set(prev);
+        ns.delete(id);
+        return ns;
+      });
+
+      // 4) leaving 상태 해제
+      setLeaving((prev) => {
+        const ns = new Set(prev);
+        ns.delete(id);
+        return ns;
+      });
+
+      // 5) 다음 줄로 넘어가기 전 아주 살짝 텀
+      await sleep(GAP_MS);
+    }
   };
 
-  const handleAssignAll = () => {
+  const handleAssignSelected = async () => {
+    const ids = Array.from(selected).filter((id) => filtered.some((it) => it.productId === id));
+    if (ids.length === 0) return;
+    await animateAssignAndRemove(ids);
+  };
+
+  const handleAssignAll = async () => {
     const allIds = filtered.map((it) => it.productId);
     if (allIds.length === 0) return;
-    alert(`전체 배정: ${allIds.length}건`);
+    await animateAssignAndRemove(allIds);
   };
 
   return (
@@ -188,6 +234,17 @@ const UnassignedProduct: React.FC = () => {
             )}
 
             <div className="assign-group">
+              {/* 필터 결과(모든 페이지) 전체 선택/해제 */}
+              <button
+                className="assign-tertiary"
+                disabled={filtered.length === 0}
+                onClick={toggleAllPages}
+                title="필터 결과(모든 페이지) 전체 선택/해제"
+                aria-pressed={filtered.length > 0 && filtered.every((it) => selected.has(it.productId))}
+              >
+                전체 선택
+              </button>
+
               <button
                 className="assign-primary"
                 disabled={selected.size === 0}
@@ -223,11 +280,13 @@ const UnassignedProduct: React.FC = () => {
               <thead>
                 <tr>
                   <th style={{ width: 44 }}>
+                    {/* (수정) 필터 결과 전체 토글 */}
                     <input
+                      ref={headerCheckRef}
                       type="checkbox"
-                      checked={allCheckedCurrentPage}
-                      onChange={(e) => togglePageAll(e.target.checked)}
-                      aria-label="현재 페이지 전체 선택"
+                      checked={allCheckedFiltered}
+                      onChange={(e) => toggleFilteredAll(e.target.checked)}
+                      aria-label="필터 결과 전체 선택"
                     />
                   </th>
                   <th>ID</th>
@@ -242,15 +301,17 @@ const UnassignedProduct: React.FC = () => {
                 {pageData.map((it) => {
                   const checked = selected.has(it.productId);
                   return (
-                    <tr key={it.productId}>
+                    <tr
+                      key={it.productId}
+                      className={leaving.has(it.productId) ? "leaving" : ""}
+                    >
                       <td>
                         <input
                           type="checkbox"
                           checked={checked}
-                          onChange={(e) =>
-                            toggleOne(it.productId, e.target.checked)
-                          }
+                          onChange={(e) => toggleOne(it.productId, e.target.checked)}
                           aria-label={`${it.productId} 선택`}
+                          disabled={leaving.has(it.productId)}
                         />
                       </td>
                       <td>{it.productId}</td>
@@ -268,18 +329,10 @@ const UnassignedProduct: React.FC = () => {
             </table>
 
             <div className="pagination">
-              <button
-                onClick={() => go(1)}
-                disabled={page === 1}
-                aria-label="첫 페이지"
-              >
+              <button onClick={() => go(1)} disabled={page === 1} aria-label="첫 페이지">
                 «
               </button>
-              <button
-                onClick={() => go(page - 1)}
-                disabled={page === 1}
-                aria-label="이전 페이지"
-              >
+              <button onClick={() => go(page - 1)} disabled={page === 1} aria-label="이전 페이지">
                 ‹
               </button>
 
@@ -312,10 +365,9 @@ const UnassignedProduct: React.FC = () => {
           </>
         )}
       </div>
+
       <Footer
-        onSearch={(ff: FooterFilters, nq?: string) =>
-          navigate("/manage", { state: { ff, nq } })
-        }
+        onSearch={(ff: FooterFilters, nq?: string) => navigate("/manage", { state: { ff, nq } })}
       />
     </div>
   );

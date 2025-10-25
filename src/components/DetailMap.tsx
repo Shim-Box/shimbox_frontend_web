@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Map as KakaoMap, MapMarker } from "react-kakao-maps-sdk";
 
 declare global {
@@ -44,6 +44,10 @@ const DetailMap: React.FC<DetailMapProps> = ({
   const [geoPoints, setGeoPoints] = useState<LatLng[]>([]);
   const [addrCenter, setAddrCenter] = useState<LatLng | null>(null);
 
+  // 맵/컨테이너 참조
+  const mapRef = useRef<kakao.maps.Map | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
   const addrList = useMemo<string[]>(
     () => (Array.isArray(addresses) ? addresses : []),
     [addresses]
@@ -53,12 +57,20 @@ const DetailMap: React.FC<DetailMapProps> = ({
     setReady(!!window.kakao?.maps);
   }, []);
 
-  // 주소 → 좌표 변환
+  // 컨테이너 크기 변경 시 relayout
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const ro = new ResizeObserver(() => {
+      if (mapRef.current) mapRef.current.relayout();
+    });
+    ro.observe(containerRef.current);
+    return () => ro.disconnect();
+  }, []);
+
+  // 주소 → 좌표 변환 (coords가 없을 때만)
   useEffect(() => {
     if (!ready) return;
-
     if (Array.isArray(coords) && coords.length > 0) return;
-
     if (!window.kakao.maps.services) return;
 
     if (addrList.length === 0) {
@@ -95,8 +107,9 @@ const DetailMap: React.FC<DetailMapProps> = ({
       .catch(() => {
         if (geoPoints.length) setGeoPoints([]);
       });
-  }, [ready, addrList, coords]);
+  }, [ready, addrList, coords, geoPoints.length]);
 
+  // 주소 중심 계산 (centerCoord/coords가 없을 때만)
   useEffect(() => {
     if (!ready) return;
     if (centerCoord || (Array.isArray(coords) && coords.length > 0)) {
@@ -120,7 +133,7 @@ const DetailMap: React.FC<DetailMapProps> = ({
         if (addrCenter !== null) setAddrCenter(null);
       }
     });
-  }, [ready, centerCoord, coords, centerAddress, addrList]);
+  }, [ready, centerCoord, coords, centerAddress, addrList, addrCenter]);
 
   // 마커 리스트
   const markerPoints: LatLng[] = useMemo(() => {
@@ -137,22 +150,65 @@ const DetailMap: React.FC<DetailMapProps> = ({
     return DEFAULT_CENTER;
   }, [centerCoord, coords, addrCenter, geoPoints]);
 
+  // 마커가 바뀌면 화면에 모두 보이도록 fitBounds + relayout
+  useEffect(() => {
+    if (!mapRef.current) return;
+    if (markerPoints.length === 0) {
+      mapRef.current.relayout();
+      return;
+    }
+    if (markerPoints.length === 1) {
+      const p = markerPoints[0];
+      mapRef.current.setCenter(new window.kakao.maps.LatLng(p.lat, p.lng));
+      mapRef.current.relayout();
+      return;
+    }
+    const bounds = new window.kakao.maps.LatLngBounds();
+    markerPoints.forEach((p) =>
+      bounds.extend(new window.kakao.maps.LatLng(p.lat, p.lng))
+    );
+    mapRef.current.setBounds(bounds);
+    mapRef.current.relayout();
+  }, [markerPoints]);
+
+  // ✅ 마커 이미지 배열 보정: 1장만 오면 반복, 부족하면 마지막 이미지로 채움
+  const resolvedMarkerImages = useMemo(() => {
+    if (!markerImageUrls || markerImageUrls.length === 0) return [];
+    if (markerImageUrls.length === markerPoints.length) return markerImageUrls;
+    if (markerImageUrls.length === 1) {
+      return Array(markerPoints.length).fill(markerImageUrls[0]);
+    }
+    return markerPoints.map(
+      (_p, i) =>
+        markerImageUrls[i] ??
+        markerImageUrls[markerImageUrls.length - 1]
+    );
+  }, [markerImageUrls, markerPoints.length]);
+
   if (!ready) {
     return (
-      <div style={{ width: "100%", height: "100%", background: "#e6e6e6" }} />
+      <div
+        ref={containerRef}
+        style={{ width: "100%", height: "100%", background: "#e6e6e6" }}
+      />
     );
   }
 
   return (
-    <div style={{ width: "100%", height: "100%" }}>
+    <div ref={containerRef} style={{ width: "100%", height: "100%" }}>
       <KakaoMap
         center={center}
         isPanto
         level={level}
         style={{ width: "100%", height: "100%" }}
+        onCreate={(map) => {
+          mapRef.current = map;
+          // 컨테이너가 늦게 보이는 레이아웃에서도 안전
+          setTimeout(() => map.relayout(), 0);
+        }}
       >
         {markerPoints.map((c, idx) => {
-          const src = markerImageUrls?.[idx];
+          const src = resolvedMarkerImages[idx];
           return (
             <MapMarker
               key={`${c.lat},${c.lng},${idx}`}

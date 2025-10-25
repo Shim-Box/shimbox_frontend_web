@@ -1,0 +1,6 @@
+{
+  "dart.analysisExcludedFolders": [
+    "src/models",
+    "src/services"
+  ]
+}

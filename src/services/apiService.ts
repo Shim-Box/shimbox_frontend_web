@@ -17,7 +17,7 @@ import {
 } from "../models/AdminModels";
 import { PaginatedResponse } from "../models/PaginatedResponse";
 
-/** ───────────────── 토큰 유틸 ───────────────── */
+/** ─────────── 토큰 유틸 ─────────── */
 const ACCESS_KEY = "accessToken";
 const REFRESH_KEY = "refreshToken";
 
@@ -42,7 +42,7 @@ function clearTokens() {
   sessionStorage.removeItem(REFRESH_KEY);
 }
 
-/** ───────────────── axios 기본 설정 ───────────────── */
+/** ─────────── axios 기본 ─────────── */
 const client = axios.create({
   baseURL: BASE_URL,
   headers: { "Content-Type": "application/json" },
@@ -53,10 +53,8 @@ function unwrap<T>(res: AxiosResponse<ApiResponse<T>>): T {
   throw new Error(res.data.message);
 }
 
-/** 인증 API 여부 */
 const isAuthApi = (url: string) => url.startsWith("api/v1/auth/");
 
-/** 요청 인터셉터: 인증 API 제외하고 Authorization 자동 주입 */
 client.interceptors.request.use((config) => {
   const url = config.url ?? "";
   if (!config.headers) config.headers = new axios.AxiosHeaders();
@@ -72,7 +70,7 @@ client.interceptors.request.use((config) => {
   return config;
 });
 
-/** ───────────────── 리프레시 단일 비행 처리 ───────────────── */
+/** ─────────── 리프레시 단일비행 ─────────── */
 let isRefreshing = false;
 let waitQueue: Array<(token?: string) => void> = [];
 
@@ -88,16 +86,12 @@ async function reissue(): Promise<string | undefined> {
 
   try {
     isRefreshing = true;
-
-    // reissue는 인증 API이므로 요청 인터셉터가 Authorization 헤더를 제거함
     const res = await client.post<ApiResponse<AuthTokens>>(
       "api/v1/auth/reissue",
       { refreshToken: rt }
     );
-
     const tokens = res.data.data;
     setTokens(tokens);
-
     waitQueue.forEach((fn) => fn(tokens.accessToken));
     waitQueue = [];
     return tokens.accessToken;
@@ -111,10 +105,6 @@ async function reissue(): Promise<string | undefined> {
   }
 }
 
-/** 응답 인터셉터:
- *  - 401 또는 403 에서 1회 리프레시 시도 후 원요청 재시도
- *  - auth API는 제외
- */
 client.interceptors.response.use(
   (res) => res,
   async (error: AxiosError) => {
@@ -124,24 +114,16 @@ client.interceptors.response.use(
     const status = error.response?.status ?? 0;
     const url = original.url || "";
 
-    // 인증 관련 엔드포인트 자체에서의 에러는 통과
     if (isAuthApi(url)) return Promise.reject(error);
 
-    // 만료를 403으로 보내는 백엔드 대응: 401/403 모두 refresh 시도
     if ((status === 401 || status === 403) && !(original as any)._retry) {
       (original as any)._retry = true;
-
       try {
         const newAccess = await reissue();
-        if (!newAccess) {
-          return Promise.reject(error);
-        }
-
-        // Authorization 갱신 후 재시도
+        if (!newAccess) return Promise.reject(error);
         if (!original.headers) original.headers = new axios.AxiosHeaders();
-        (original.headers as AxiosRequestHeaders)[
-          "Authorization"
-        ] = `Bearer ${newAccess}`;
+        (original.headers as AxiosRequestHeaders)["Authorization"] =
+          `Bearer ${newAccess}`;
         return client(original);
       } catch {
         clearTokens();
@@ -149,19 +131,28 @@ client.interceptors.response.use(
       }
     }
 
-    // 여전히 403이면 권한 문제 가능성 안내(ADMIN 권한 필요 등)
     if (status === 403) {
-      console.warn(
-        "권한 없음(403). 계정 역할/승인 상태를 확인하세요. URL:",
-        url
-      );
+      console.warn("권한 없음(403). 계정 역할/승인 상태를 확인하세요. URL:", url);
     }
 
     return Promise.reject(error);
   }
 );
 
-/** ───────────────── API 서비스 ───────────────── */
+/** 위치 스냅샷 타입 */
+export type RealtimeLocationItem = {
+  lat: number;
+  lng: number;
+  capturedAt?: string;
+  addressShort?: string;
+  region?: string;
+  timestamp?: number;
+};
+
+/** ─────────── 간단 캐시(메모리) ─────────── */
+const productListCache = new Map<number, DeliveryItem[]>();
+
+/** ─────────── API 서비스 ─────────── */
 export const ApiService = {
   /* Auth */
   registerAdmin(data: { email: string; password: string }) {
@@ -240,34 +231,53 @@ export const ApiService = {
       .then(unwrap);
   },
 
-  /** 배송 상태별 필터 지원 + 404를 빈 배열로 안전 처리 */
-  fetchDriverAssignedProducts(
+  /** 배송 상태별 필터 지원 + 404/204 → 빈 배열 처리 + 캐시 */
+  async fetchDriverAssignedProducts(
     driverId: number,
     shippingStatus?: "배송대기" | "배송시작" | "배송완료"
   ) {
-    if (!driverId && driverId !== 0)
-      return Promise.resolve([] as DeliveryItem[]);
+    if (!driverId && driverId !== 0) return [] as DeliveryItem[];
 
-    return client
-      .get<ApiResponse<DeliveryItem[]>>(
-        `api/v1/admin/driver/${driverId}/products`,
-        {
-          params: shippingStatus ? { shippingStatus } : undefined,
-          validateStatus: (s) => s === 200 || s === 404,
-        }
-      )
-      .then((res) => {
-        if (res.status === 404) return [] as DeliveryItem[];
-        return (res.data as ApiResponse<DeliveryItem[]>).data;
-      });
+    // 전체(상태 미지정)만 캐싱
+    if (!shippingStatus && productListCache.has(driverId)) {
+      return productListCache.get(driverId)!;
+    }
+
+    const res = await client.get<ApiResponse<DeliveryItem[]>>(
+      `api/v1/admin/driver/${driverId}/products`,
+      {
+        params: shippingStatus ? { shippingStatus } : undefined,
+        validateStatus: (s) => s === 200 || s === 204 || s === 404,
+      }
+    );
+
+    if (res.status === 200) {
+      const list = (res.data as ApiResponse<DeliveryItem[]>).data || [];
+      if (!shippingStatus) productListCache.set(driverId, list);
+      return list;
+    }
+    // 204/404
+    if (!shippingStatus) productListCache.set(driverId, []);
+    return [] as DeliveryItem[];
   },
 
-  /** 실시간 건강 스냅샷 (초기 채우기/30초 보정용) */
+  /** 실시간 건강 스냅샷 */
   fetchRealtimeHealth(region?: string) {
     return client
       .get<ApiResponse<RealtimeHealthItem[]>>("api/v1/admin/realtime/health", {
         params: region ? { region } : undefined,
       })
+      .then(unwrap);
+  },
+
+  /** 실시간 위치 스냅샷 */
+  fetchRealtimeLocations(region?: string) {
+    const params = region ? { region } : undefined;
+    return client
+      .get<ApiResponse<RealtimeLocationItem[]>>(
+        "api/v1/admin/location/realtime",
+        { params }
+      )
       .then(unwrap);
   },
 

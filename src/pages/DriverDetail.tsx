@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext, useMemo } from "react";
+import React, { useState, useEffect, useContext, useMemo, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import Sidebar from "../pages/Sidebar";
 import "../styles/DriverDetail.css";
@@ -48,6 +48,20 @@ type RealtimeHealth = {
   capturedAt: string;
 };
 
+// HTTP → WS URL 정규화
+const toWSUrl = (httpBase: string, path: string) => {
+  const u = new URL(httpBase);
+  u.protocol = u.protocol === "https:" ? "wss:" : "ws:";
+  u.pathname = path.startsWith("/") ? path : `/${path}`;
+  return u.toString();
+};
+
+// ✅ 마커 이미지 경로
+const MARKER_IMG = {
+  normal: "/images/driverMarker.png",
+  danger: "/images/dangerMarker.png",
+} as const;
+
 const DriverDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const { token } = useContext(AuthContext);
@@ -65,21 +79,15 @@ const DriverDetail: React.FC = () => {
   const [completed, setCompleted] = useState<DeliveryItem[]>([]);
   const [loadingOngoing, setLoadingOngoing] = useState(false);
   const [loadingCompleted, setLoadingCompleted] = useState(false);
-  const [activeTab, setActiveTab] = useState<"ONGOING" | "COMPLETED">(
-    "ONGOING"
-  );
+  const [activeTab, setActiveTab] = useState<"ONGOING" | "COMPLETED">("ONGOING");
 
   // 실시간
   const [realtime, setRealtime] = useState<RealtimeHealth | null>(null);
   const [realtimeLoc, setRealtimeLoc] = useState<LatLng | null>(null);
 
   // 타임라인
-  const [selectedProductId, setSelectedProductId] = useState<number | null>(
-    null
-  );
-  const [productTimeline, setProductTimeline] = useState<ProductTimelineItem[]>(
-    []
-  );
+  const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
+  const [productTimeline, setProductTimeline] = useState<ProductTimelineItem[]>([]);
   const [loadingProductTimeline, setLoadingProductTimeline] = useState(false);
 
   // 프로필
@@ -110,7 +118,7 @@ const DriverDetail: React.FC = () => {
       });
   }, [token, driverId]);
 
-  // 배송 목록 — 서버 필터 사용 (배송대기+배송시작=진행중, 배송완료=완료)
+  // 배송 목록 — 전체 요청 후 클라이언트 분류 (서버 404 회피)
   useEffect(() => {
     if (!token || !driverId) return;
 
@@ -119,14 +127,24 @@ const DriverDetail: React.FC = () => {
         setLoadingOngoing(true);
         setLoadingCompleted(true);
 
-        const [waitList, startList, doneList] = await Promise.all([
-          ApiService.fetchDriverAssignedProducts(driverId, "배송대기"),
-          ApiService.fetchDriverAssignedProducts(driverId, "배송시작"),
-          ApiService.fetchDriverAssignedProducts(driverId, "배송완료"),
-        ]);
+        const all = await ApiService.fetchDriverAssignedProducts(driverId);
+        const items = Array.isArray(all) ? all : [];
 
-        setOngoing([...(waitList ?? []), ...(startList ?? [])]);
-        setCompleted(doneList ?? []);
+        const DONE_SET  = new Set(["배송완료", "DELIVERED", "완료", "delivered"]);
+        const START_SET = new Set(["배송시작", "배송중", "IN_PROGRESS", "started"]);
+        const WAIT_SET  = new Set(["배송대기", "PENDING", "waiting"]);
+
+        const completed = items.filter(it =>
+          DONE_SET.has(String(it.shippingStatus).trim())
+        );
+        const ongoing = items.filter(it => !DONE_SET.has(String(it.shippingStatus).trim()))
+          .filter(it =>
+            START_SET.has(String(it.shippingStatus).trim()) ||
+            WAIT_SET.has(String(it.shippingStatus).trim())
+          );
+
+        setOngoing(ongoing);
+        setCompleted(completed);
       } catch {
         setOngoing([]);
         setCompleted([]);
@@ -139,17 +157,27 @@ const DriverDetail: React.FC = () => {
     load();
   }, [token, driverId]);
 
-  // 4) WS 연결 (건강/위치)
+  // WS 연결 (건강/위치) — 토큰/드라이버 기준 단일 연결
   useEffect(() => {
-    if (!token || !profile) return;
+    if (!token || !driverId) return;
 
-    const host = BASE_URL.replace(/^http/, "ws");
-    const wsUrl = `${host}/ws/location?token=${encodeURIComponent(
-      token as string
-    )}&as=web`;
+    // 실제 서버 라우팅에 맞게 경로 선택:
+    // const wsUrl = toWSUrl(BASE_URL, "/ws/location");
+    const wsUrl = toWSUrl(BASE_URL, "/api/v1/ws/location"); // <- 필요에 맞게 한 곳으로 확정
+    const urlWithQuery = `${wsUrl}?token=${encodeURIComponent(String(token))}&as=web`;
     const DEBUG = localStorage.getItem("debug:ws") === "1";
 
-    const ws = new WebSocket(wsUrl);
+    const ws = new WebSocket(urlWithQuery);
+
+    ws.onopen = () => {
+      if (DEBUG) console.log("[WS] open:", urlWithQuery);
+    };
+    ws.onerror = (e) => {
+      if (DEBUG) console.warn("[WS] error:", e);
+    };
+    ws.onclose = (e) => {
+      if (DEBUG) console.log("[WS] close:", e.code, e.reason, "clean:", e.wasClean);
+    };
 
     ws.onmessage = (evt: MessageEvent<string>) => {
       try {
@@ -158,7 +186,7 @@ const DriverDetail: React.FC = () => {
         if (msg.type === "health") {
           const p = msg.payload || {};
           const matchByDriver =
-            typeof p.driverId === "number" && p.driverId === profile.driverId;
+            typeof p.driverId === "number" && p.driverId === driverId;
           const matchByUser =
             p.userId !== undefined &&
             userIdForDriver &&
@@ -172,8 +200,7 @@ const DriverDetail: React.FC = () => {
             userId:
               (userIdForDriver ??
                 prev?.userId ??
-                (p.userId !== undefined ? String(p.userId) : "")) ||
-              "",
+                (p.userId !== undefined ? String(p.userId) : "")) || "",
             heartRate: hr,
             step: st,
             capturedAt: recordedAt,
@@ -182,32 +209,25 @@ const DriverDetail: React.FC = () => {
         } else if (msg.type === "location") {
           const p = msg.payload || ({} as any);
           const matchByDriver =
-            typeof p.driverId === "number" && p.driverId === profile.driverId;
+            typeof p.driverId === "number" && p.driverId === driverId;
           const matchByUser =
             p.userId !== undefined &&
             userIdForDriver &&
             String(p.userId) === String(userIdForDriver);
           if (!(matchByDriver || matchByUser)) return;
 
-          if (isOnDuty) {
-            if (typeof p.lat === "number" && typeof p.lng === "number") {
-              setRealtimeLoc({ lat: p.lat, lng: p.lng });
-            }
-          } else {
-            setRealtimeLoc(null);
+          if (typeof p.lat === "number" && typeof p.lng === "number") {
+            setRealtimeLoc({ lat: p.lat, lng: p.lng });
           }
-          if (DEBUG)
-            console.log("[WS location] setRealtimeLoc", p?.lat, p?.lng);
+          if (DEBUG) console.log("[WS location] setRealtimeLoc", p?.lat, p?.lng);
         }
       } catch {}
     };
 
     return () => {
-      try {
-        ws.close();
-      } catch {}
+      try { ws.close(); } catch {}
     };
-  }, [token, profile, userIdForDriver, isOnDuty]);
+  }, [token, driverId]); // 의존성 최소화로 단일 연결 유지
 
   const loadProductTimeline = async (pid: number) => {
     setSelectedProductId(pid);
@@ -222,13 +242,9 @@ const DriverDetail: React.FC = () => {
     }
   };
 
-  const isDanger = useMemo(
-    () => (profile?.conditionStatus ?? "") === "위험",
-    [profile]
-  );
+  const isDanger = useMemo(() => (profile?.conditionStatus ?? "") === "위험", [profile]);
   const currentList = activeTab === "ONGOING" ? ongoing : completed;
-  const loadingCurrent =
-    activeTab === "ONGOING" ? loadingOngoing : loadingCompleted;
+  const loadingCurrent = activeTab === "ONGOING" ? loadingOngoing : loadingCompleted;
   const condition = profile?.conditionStatus ?? "알수없음";
   const conditionBadgeClass =
     condition === "위험" ? "danger" : condition === "불안" ? "warn" : "good";
@@ -275,8 +291,27 @@ const DriverDetail: React.FC = () => {
     );
   }
 
-  const mapCoords = isOnDuty && realtimeLoc ? [realtimeLoc] : [];
-  const mapCenter = mapCoords[0];
+  // ===== 지도 관련 계산 =====
+  // 실시간 좌표가 있으면 항상 표시
+  const mapCoords = realtimeLoc ? [realtimeLoc] : [];
+
+  // 초기 진입 시 바로 보이게 주소 중심/마커 폴백
+  const fallbackAddress =
+    profile?.residence || (Array.isArray(profile?.regions) ? profile?.regions?.[0] : "");
+  const mapCenterCoord = realtimeLoc || undefined;
+  const mapCenterAddress =
+    !mapCenterCoord && fallbackAddress ? String(fallbackAddress) : undefined;
+
+  // 실시간이 없을 때 주소 마커 1개라도 표시
+  const mapAddresses =
+    !realtimeLoc && fallbackAddress ? [String(fallbackAddress)] : undefined;
+
+  // ✅ 상태에 따라 마커 이미지 결정 (위험이면 빨간색)
+  const markerImageSrc = isDanger ? MARKER_IMG.danger : MARKER_IMG.normal;
+
+  // ✅ DetailMap이 단일 이미지를 전 마커에 반복 적용해주므로 한 장만 넘겨도 됨
+  const markerImageUrls = markerImageSrc ? [markerImageSrc] : [];
+
   const mapLevel = 6;
 
   return (
@@ -359,11 +394,12 @@ const DriverDetail: React.FC = () => {
             <div className="driver-detail-map-area">
               <DetailMap
                 coords={mapCoords}
-                centerCoord={mapCenter}
+                addresses={mapAddresses}            // ★ 폴백 마커
+                centerCoord={mapCenterCoord}
+                centerAddress={mapCenterAddress}    // ★ 초기 진입 즉시 보이게
                 level={mapLevel}
-                markerImageUrls={mapCoords.map(
-                  () => "/images/driverMarker.png"
-                )}
+                markerImageUrls={markerImageUrls}   // ★ 위험 상태면 빨간 마커 전달
+                markerSize={{ width: 35, height: 45 }}
               />
             </div>
 
@@ -380,9 +416,7 @@ const DriverDetail: React.FC = () => {
                     진행 중
                   </span>
                   <span
-                    className={`tab ${
-                      activeTab === "COMPLETED" ? "active" : ""
-                    }`}
+                    className={`tab ${activeTab === "COMPLETED" ? "active" : ""}`}
                     onClick={() => setActiveTab("COMPLETED")}
                   >
                     완료
@@ -422,8 +456,7 @@ const DriverDetail: React.FC = () => {
                       <p className="summary">
                         상품명: {item.productName}
                         <br />
-                        수취인: {item.recipientName} (
-                        {item.recipientPhoneNumber})
+                        수취인: {item.recipientName} ({item.recipientPhoneNumber})
                       </p>
                       <p className="status">{item.shippingStatus}</p>
                     </div>
