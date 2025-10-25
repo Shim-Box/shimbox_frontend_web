@@ -1,3 +1,4 @@
+// src/pages/DriverDetail.tsx
 import React, { useState, useEffect, useContext, useMemo, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import Sidebar from "../pages/Sidebar";
@@ -9,54 +10,31 @@ import {
   ProductTimelineItem,
   ApprovedUser,
   DriverProfile,
+  RealtimeHealthItem,
+  // RealtimeLocationItem 타입이 존재한다면 아래 주석 해제
+  // RealtimeLocationItem,
 } from "../models/AdminModels";
 import { AuthContext } from "../context/AuthContext";
 import Footer, { FooterFilters } from "../pages/Footer";
-import { BASE_URL } from "../env";
+import { connectLocationWS, LocationPayload, HealthPayload } from "../services/wsClient";
 
-/** WS 메시지 */
-type WSHealthMsg = {
-  type: "health";
-  payload: {
-    driverId?: number;
-    userId?: string | number;
-    heartRate?: number;
-    step?: number;
-    recordedAt?: string;
-    capturedAt?: string;
-  };
-};
+/** 상태 타입 & 유틸 (메인과 동일 규칙) */
+type StatusKey = "위험" | "불안" | "좋음" | "알수없음";
+const toStatusKey = (s?: string): StatusKey =>
+  s === "위험" || s === "불안" || s === "좋음" ? s : "알수없음";
 
-type WSLocationMsg = {
-  type: "location";
-  payload: {
-    driverId?: number;
-    userId?: string | number;
-    lat: number;
-    lng: number;
-    capturedAt?: string;
-    timestamp?: number;
-  };
-};
-type WSMessage = WSHealthMsg | WSLocationMsg;
+const normalizeServerLevel = (lv?: string): "좋음" | "경고" | "위험" | "알수없음" =>
+  lv === "위험" ? "위험" : lv === "경고" ? "경고" : lv === "좋음" ? "좋음" : "알수없음";
 
-/** 실시간 건강 */
+/** 실시간 건강(단일 드라이버) */
 type RealtimeHealth = {
   userId: string;
   heartRate: number;
   step: number;
+  level: "좋음" | "경고" | "위험" | "알수없음";
   capturedAt: string;
 };
 
-// HTTP → WS URL 정규화
-const toWSUrl = (httpBase: string, path: string) => {
-  const u = new URL(httpBase);
-  u.protocol = u.protocol === "https:" ? "wss:" : "ws:";
-  u.pathname = path.startsWith("/") ? path : `/${path}`;
-  return u.toString();
-};
-
-// ✅ 마커 이미지 경로
 const MARKER_IMG = {
   normal: "/images/driverMarker.png",
   danger: "/images/dangerMarker.png",
@@ -85,10 +63,20 @@ const DriverDetail: React.FC = () => {
   const [realtime, setRealtime] = useState<RealtimeHealth | null>(null);
   const [realtimeLoc, setRealtimeLoc] = useState<LatLng | null>(null);
 
+  // 초기 위치 그레이스 타임(추정 위치 표시 지연)
+  const [gracePassed, setGracePassed] = useState(false);
+  const GRACE_MS = 3000; // 3초 정도면 체감상 점프 현상 크게 줄어듦
+
   // 타임라인
   const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
   const [productTimeline, setProductTimeline] = useState<ProductTimelineItem[]>([]);
   const [loadingProductTimeline, setLoadingProductTimeline] = useState(false);
+
+  // 최신 식별자 유지용 ref (WS 콜백에서 최신 값 접근)
+  const userIdRef = useRef<string | null>(null);
+  const driverIdRef = useRef<number>(driverId);
+  useEffect(() => { userIdRef.current = userIdForDriver; }, [userIdForDriver]);
+  useEffect(() => { driverIdRef.current = driverId; }, [driverId]);
 
   // 프로필
   useEffect(() => {
@@ -118,7 +106,7 @@ const DriverDetail: React.FC = () => {
       });
   }, [token, driverId]);
 
-  // 배송 목록 — 전체 요청 후 클라이언트 분류 (서버 404 회피)
+  // 배송 목록 — 전체 요청 후 클라이언트 분류
   useEffect(() => {
     if (!token || !driverId) return;
 
@@ -157,78 +145,156 @@ const DriverDetail: React.FC = () => {
     load();
   }, [token, driverId]);
 
-  // WS 연결 (건강/위치) — 토큰/드라이버 기준 단일 연결
+  // ────────────────────────────────────────────────
+  // 실시간: WS + REST 폴링(백업). Main과 동일 전략 + 초기 위치 개선
+  // ────────────────────────────────────────────────
+
+  // 초기 그레이스 타이머: 추정 주소로 지도 점프를 3초 지연
+  useEffect(() => {
+    const t = window.setTimeout(() => setGracePassed(true), GRACE_MS);
+    return () => window.clearTimeout(t);
+  }, []);
+
+  // (선택) 초기 REST 위치 스냅샷 1회 시도: driverId가 있는 경우 바로 반영
   useEffect(() => {
     if (!token || !driverId) return;
+    let alive = true;
 
-    // 실제 서버 라우팅에 맞게 경로 선택:
-    // const wsUrl = toWSUrl(BASE_URL, "/ws/location");
-    const wsUrl = toWSUrl(BASE_URL, "/api/v1/ws/location"); // <- 필요에 맞게 한 곳으로 확정
-    const urlWithQuery = `${wsUrl}?token=${encodeURIComponent(String(token))}&as=web`;
-    const DEBUG = localStorage.getItem("debug:ws") === "1";
-
-    const ws = new WebSocket(urlWithQuery);
-
-    ws.onopen = () => {
-      if (DEBUG) console.log("[WS] open:", urlWithQuery);
-    };
-    ws.onerror = (e) => {
-      if (DEBUG) console.warn("[WS] error:", e);
-    };
-    ws.onclose = (e) => {
-      if (DEBUG) console.log("[WS] close:", e.code, e.reason, "clean:", e.wasClean);
-    };
-
-    ws.onmessage = (evt: MessageEvent<string>) => {
+    (async () => {
       try {
-        const msg: WSMessage = JSON.parse(evt.data);
+        // 사용 가능한 API라면 region 추정으로 빠른 근접 좌표만 받아도 충분
+        const region =
+          (profile?.regions && profile.regions.length > 0 && profile.regions[0]) ||
+          profile?.residence ||
+          undefined;
 
-        if (msg.type === "health") {
-          const p = msg.payload || {};
-          const matchByDriver =
-            typeof p.driverId === "number" && p.driverId === driverId;
-          const matchByUser =
-            p.userId !== undefined &&
-            userIdForDriver &&
-            String(p.userId) === String(userIdForDriver);
-          if (!(matchByDriver || matchByUser)) return;
+        // AdminModels에 RealtimeLocationItem이 있고 ApiService에 해당 함수가 있을 때만 동작
+        // 안전하게 any로 처리하여 스냅샷 좌표를 얻으면 사용
+        const rows: any = await (ApiService as any).fetchRealtimeLocations?.(region);
+        if (!alive || !Array.isArray(rows)) return;
 
-          const hr = Number(p.heartRate ?? 0);
-          const st = Number(p.step ?? 0);
-          const recordedAt = p.recordedAt || p.capturedAt || "";
-          setRealtime((prev) => ({
-            userId:
-              (userIdForDriver ??
-                prev?.userId ??
-                (p.userId !== undefined ? String(p.userId) : "")) || "",
-            heartRate: hr,
-            step: st,
-            capturedAt: recordedAt,
-          }));
-          if (DEBUG) console.log("[WS health] hr:", hr, "st:", st);
-        } else if (msg.type === "location") {
-          const p = msg.payload || ({} as any);
-          const matchByDriver =
-            typeof p.driverId === "number" && p.driverId === driverId;
-          const matchByUser =
-            p.userId !== undefined &&
-            userIdForDriver &&
-            String(p.userId) === String(userIdForDriver);
-          if (!(matchByDriver || matchByUser)) return;
+        // driverId 매칭 우선, 없으면 첫 좌표라도 사용
+        const mine =
+          rows.find((r: any) => Number(r?.driverId) === driverId) || rows[0];
+        if (mine && typeof mine.lat === "number" && typeof mine.lng === "number") {
+          setRealtimeLoc({ lat: mine.lat, lng: mine.lng });
+        }
+      } catch {
+        // ignore
+      }
+    })();
+
+    return () => { alive = false; };
+  }, [token, driverId, profile?.regions, profile?.residence]);
+
+  // WS 연결 (위치 & 건강)
+  useEffect(() => {
+    if (!token) return;
+
+    const disconnect = connectLocationWS({
+      as: "web",
+      handlers: {
+        onLocation: (msg: { type: "location"; payload: LocationPayload }) => {
+          const p = msg.payload as any;
+          const didNow = driverIdRef.current;
+          const uidNow = userIdRef.current;
+
+          // 받는 쪽에서 이 기사인지 판별 (driverId / userId 기준)
+          const byDriver = typeof p?.driverId === "number" && p.driverId === didNow;
+          const byUser   = p?.userId !== undefined && uidNow && String(p.userId) === String(uidNow);
+          const noId     = p?.driverId === undefined && p?.userId === undefined; // 서버가 id 안줄 수도 있음
+          if (!(byDriver || byUser || noId)) return;
 
           if (typeof p.lat === "number" && typeof p.lng === "number") {
             setRealtimeLoc({ lat: p.lat, lng: p.lng });
           }
-          if (DEBUG) console.log("[WS location] setRealtimeLoc", p?.lat, p?.lng);
-        }
-      } catch {}
-    };
+        },
+        onHealth: (msg: { type: "health"; payload: HealthPayload }) => {
+          const p = msg.payload as any;
+          const didNow = driverIdRef.current;
+          const uidNow = userIdRef.current;
+
+          const byDriver = typeof p?.driverId === "number" && p.driverId === didNow;
+          const byUser   = p?.userId !== undefined && uidNow && String(p.userId) === String(uidNow);
+          const noId     = p?.driverId === undefined && p?.userId === undefined;
+          if (!(byDriver || byUser || noId)) return;
+
+          const hr = Number(p.heartRate ?? 0);
+          const st = Number(p.step ?? 0);
+          const captured = p.recordedAt || p.capturedAt || new Date().toISOString();
+          const level = normalizeServerLevel(p.level);
+
+          setRealtime((prev) => ({
+            userId: uidNow ?? prev?.userId ?? (p.userId !== undefined ? String(p.userId) : "") ?? "",
+            heartRate: hr,
+            step: st,
+            level,
+            capturedAt: captured,
+          }));
+        },
+      },
+      reconnect: true,
+      maxRetries: 3,
+      retryDelayMs: 2000,
+    });
 
     return () => {
-      try { ws.close(); } catch {}
+      disconnect();
     };
-  }, [token, driverId]); // 의존성 최소화로 단일 연결 유지
+  }, [token]); // driver/user는 ref로
 
+  // 건강 스냅샷 폴링 (WS 실패/지연 보강) – 주기 단축(기존 5s → 2.5s)
+  useEffect(() => {
+    if (!token) return;
+    let alive = true;
+
+    const tick = async () => {
+      try {
+        const region =
+          (profile?.regions && profile.regions.length > 0 && profile.regions[0]) ||
+          profile?.residence ||
+          undefined;
+
+        const rows: RealtimeHealthItem[] = await ApiService.fetchRealtimeHealth(region);
+        if (!alive || !Array.isArray(rows)) return;
+
+        const uidNow = userIdRef.current;
+        const didNow = driverIdRef.current;
+
+        const mine =
+          rows.find((r) => uidNow && String(r.userId) === String(uidNow)) ||
+          rows[0];
+
+        if (!mine) return;
+
+        setRealtime((prev) => {
+          const prevTs = prev?.capturedAt ? Date.parse(prev.capturedAt) : -1;
+          const newTs = mine.capturedAt ? Date.parse(mine.capturedAt) : Date.now();
+          if (prevTs !== -1 && newTs < prevTs) return prev;
+
+          return {
+            userId: String(mine.userId ?? prev?.userId ?? uidNow ?? didNow ?? ""),
+            heartRate: Number(mine.heartRate ?? prev?.heartRate ?? 0),
+            step: Number(mine.step ?? prev?.step ?? 0),
+            level: normalizeServerLevel((mine as any).level) ?? prev?.level ?? "알수없음",
+            capturedAt: mine.capturedAt ?? prev?.capturedAt ?? new Date().toISOString(),
+          };
+        });
+      } catch {
+        // ignore
+      }
+    };
+
+    // 즉시 1회 + 주기
+    tick();
+    const id = window.setInterval(tick, 2500);
+    return () => {
+      alive = false;
+      window.clearInterval(id);
+    };
+  }, [token, profile?.regions, profile?.residence]);
+
+  // 타임라인 로드
   const loadProductTimeline = async (pid: number) => {
     setSelectedProductId(pid);
     setLoadingProductTimeline(true);
@@ -242,14 +308,13 @@ const DriverDetail: React.FC = () => {
     }
   };
 
-  const isDanger = useMemo(() => (profile?.conditionStatus ?? "") === "위험", [profile]);
-  const currentList = activeTab === "ONGOING" ? ongoing : completed;
-  const loadingCurrent = activeTab === "ONGOING" ? loadingOngoing : loadingCompleted;
-  const condition = profile?.conditionStatus ?? "알수없음";
+  // ===== 표시 로직(메인과 동일한 우선순위) =====
+  const effectiveLevel: "좋음" | "경고" | "위험" | "알수없음" | StatusKey =
+    realtime?.level ?? toStatusKey(profile?.conditionStatus);
+  const isDanger = effectiveLevel === "위험";
+
   const conditionBadgeClass =
-    condition === "위험" ? "danger" : condition === "불안" ? "warn" : "good";
-  const profileCardClass = `profile-card ${isDanger ? "danger" : ""}`;
-  const healthCardClass = `health-card ${isDanger ? "danger" : ""}`;
+    effectiveLevel === "위험" ? "danger" : (effectiveLevel === "불안" || effectiveLevel === "경고") ? "warn" : "good";
 
   const liveHeartRate = Number(realtime?.heartRate ?? 0);
   const riskNote = useMemo(() => {
@@ -292,35 +357,40 @@ const DriverDetail: React.FC = () => {
   }
 
   // ===== 지도 관련 계산 =====
-  // 실시간 좌표가 있으면 항상 표시
+  // 1) 실시간 좌표가 있으면 이를 우선 사용
   const mapCoords = realtimeLoc ? [realtimeLoc] : [];
 
-  // 초기 진입 시 바로 보이게 주소 중심/마커 폴백
+  // 2) 초기에는 추정 주소 표시를 지연시켜 점프 방지
   const fallbackAddress =
     profile?.residence || (Array.isArray(profile?.regions) ? profile?.regions?.[0] : "");
+  const allowFallback = gracePassed && !realtimeLoc;
+
   const mapCenterCoord = realtimeLoc || undefined;
-  const mapCenterAddress =
-    !mapCenterCoord && fallbackAddress ? String(fallbackAddress) : undefined;
+  const mapCenterAddress = !mapCenterCoord && allowFallback && fallbackAddress
+    ? String(fallbackAddress)
+    : undefined;
 
-  // 실시간이 없을 때 주소 마커 1개라도 표시
-  const mapAddresses =
-    !realtimeLoc && fallbackAddress ? [String(fallbackAddress)] : undefined;
+  const mapAddresses = !realtimeLoc && allowFallback && fallbackAddress
+    ? [String(fallbackAddress)]
+    : undefined;
 
-  // ✅ 상태에 따라 마커 이미지 결정 (위험이면 빨간색)
+  // 상태별 마커 이미지
   const markerImageSrc = isDanger ? MARKER_IMG.danger : MARKER_IMG.normal;
-
-  // ✅ DetailMap이 단일 이미지를 전 마커에 반복 적용해주므로 한 장만 넘겨도 됨
   const markerImageUrls = markerImageSrc ? [markerImageSrc] : [];
 
   const mapLevel = 6;
+
+  // 현재 탭 데이터
+  const currentList = activeTab === "ONGOING" ? ongoing : completed;
+  const loadingCurrent = activeTab === "ONGOING" ? loadingOngoing : loadingCompleted;
 
   return (
     <div className="driver-layout">
       <Sidebar />
       <div className="driver-detail-container">
         {/* 왼쪽 프로필 */}
-        <section className="left-panel">
-          <div className={profileCardClass}>
+        <section className={`left-panel`}>
+          <div className={`profile-card ${isDanger ? "danger" : ""}`}>
             <img
               src={"/images/PostDeliver.png"}
               alt="기사 프로필"
@@ -362,13 +432,13 @@ const DriverDetail: React.FC = () => {
               <span className="info-label">위험 지수</span>
               <span className="info-value">
                 <span className={`condition-badge ${conditionBadgeClass}`}>
-                  {condition ?? "-"}
+                  {effectiveLevel === "경고" ? "불안" : effectiveLevel}
                 </span>
               </span>
             </div>
           </div>
 
-          <div className={healthCardClass}>
+          <div className={`health-card ${isDanger ? "danger" : ""}`}>
             <h4>건강 상태</h4>
             <>
               <div className="info-row">
@@ -394,13 +464,18 @@ const DriverDetail: React.FC = () => {
             <div className="driver-detail-map-area">
               <DetailMap
                 coords={mapCoords}
-                addresses={mapAddresses}            // ★ 폴백 마커
+                addresses={mapAddresses}
                 centerCoord={mapCenterCoord}
-                centerAddress={mapCenterAddress}    // ★ 초기 진입 즉시 보이게
+                centerAddress={mapCenterAddress}
                 level={mapLevel}
-                markerImageUrls={markerImageUrls}   // ★ 위험 상태면 빨간 마커 전달
+                markerImageUrls={markerImageUrls}
                 markerSize={{ width: 35, height: 45 }}
               />
+              {!realtimeLoc && !allowFallback && (
+                <div className="map-overlay-hint">
+                  실시간 위치 수신 중입니다…
+                </div>
+              )}
             </div>
 
             <div className="delivery-bottom-section">
@@ -435,9 +510,7 @@ const DriverDetail: React.FC = () => {
                   currentList.map((item) => (
                     <div
                       key={item.productId}
-                      className={`delivery-card ${
-                        selectedProductId === item.productId ? "active" : ""
-                      }`}
+                      className={`delivery-card ${selectedProductId === item.productId ? "active" : ""}`}
                       onClick={() => loadProductTimeline(item.productId)}
                       role="button"
                       tabIndex={0}
