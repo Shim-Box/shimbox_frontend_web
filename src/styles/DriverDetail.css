@@ -91,16 +91,9 @@ body,
   margin-right: 6px;
   vertical-align: middle;
 }
-
-.condition-dot.좋음 {
-  background: #2cd0ae;
-}
-.condition-dot.위험 {
-  background: red;
-}
-.condition-dot.불안 {
-  background: orange;
-}
+.condition-dot.좋음 { background: #2cd0ae; }
+.condition-dot.위험 { background: red; }
+.condition-dot.불안 { background: orange; }
 
 .status-badge {
   display: inline-block;
@@ -111,14 +104,8 @@ body,
   color: #000;
   font-weight: 500;
 }
-.status-badge.on {
-  background: #2cd0ae;
-  color: #fff;
-}
-.status-badge.off {
-  background: #ccc;
-  color: #fff;
-}
+.status-badge.on { background: #2cd0ae; color: #fff; }
+.status-badge.off { background: #ccc; color: #fff; }
 
 .center-panel {
   flex: 2;
@@ -139,7 +126,7 @@ body,
 
 .driver-detail-map-area {
   background: #e6e6e6;
-  height: 420px;       
+  height: 420px;
   min-height: 320px;
   border-radius: 8px;
   overflow: hidden;
@@ -165,10 +152,7 @@ body,
   font-size: 16px;
 }
 
-.count {
-  font-size: 13px;
-  color: gray;
-}
+.count { font-size: 13px; color: gray; }
 
 .tabs {
   display: flex;
@@ -183,11 +167,7 @@ body,
   cursor: pointer;
   background: #eee;
 }
-
-.tab.active {
-  background: #2cd0ae;
-  color: white;
-}
+.tab.active { background: #2cd0ae; color: white; }
 
 .delivery-card {
   background: #f9f9f9;
@@ -196,20 +176,9 @@ body,
   margin-bottom: 10px;
 }
 
-.address {
-  font-weight: bold;
-  font-size: 15px;
-}
-
-.summary {
-  font-size: 13px;
-  color: gray;
-}
-
-.status {
-  font-size: 13px;
-  color: #2cd0ae;
-}
+.address { font-weight: bold; font-size: 15px; }
+.summary { font-size: 13px; color: gray; }
+.status  { font-size: 13px; color: #2cd0ae; }
 
 .view-button {
   margin-top: 5px;
@@ -243,7 +212,6 @@ body,
   margin-bottom: 30px;
   padding-left: 28px;
 }
-
 .timeline-item::before {
   content: "";
   position: absolute;
@@ -272,54 +240,15 @@ body,
   box-shadow: 0 0 0 2px white;
 }
 
-.timeline-content {
-  flex: 1;
-  padding-left: 12px;
-}
+.timeline-content { flex: 1; padding-left: 12px; }
+.timeline-title { font-size: 14px; font-weight: 500; color: #111; }
+.timeline-desc  { font-size: 12px; color: gray; margin-top: 4px; }
+.timeline-time  { font-size: 13px; color: #444; font-weight: bold; white-space: nowrap; margin-left: auto; padding-left: 12px; }
+.timeline .event { font-size: 14px; font-weight: 500; color: #111; margin-left: 0; }
+.timeline .desc  { font-size: 12px; color: gray; margin-left: 0; margin-top: 2px; }
 
-.timeline-title {
-  font-size: 14px;
-  font-weight: 500;
-  color: #111;
-}
-
-.timeline-desc {
-  font-size: 12px;
-  color: gray;
-  margin-top: 4px;
-}
-
-.timeline-time {
-  font-size: 13px;
-  color: #444;
-  font-weight: bold;
-  white-space: nowrap;
-  margin-left: auto;
-  padding-left: 12px;
-}
-
-.timeline .event {
-  font-size: 14px;
-  font-weight: 500;
-  color: #111;
-  margin-left: 0;
-}
-
-.timeline .desc {
-  font-size: 12px;
-  color: gray;
-  margin-left: 0;
-  margin-top: 2px;
-}
-
-.right-panel::-webkit-scrollbar {
-  display: none;
-}
-
-.right-panel {
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
+.right-panel::-webkit-scrollbar { display: none; }
+.right-panel { scrollbar-width: none; -ms-overflow-style: none; }
 
 /* 상태 배지 */
 .condition-badge {
@@ -329,33 +258,56 @@ body,
   font-weight: 600;
   font-size: 12px;
 }
-.condition-badge.good {
-  background: #e9f8f3;
-  color: #1aa37a;
-}
-.condition-badge.warn {
-  background: #fff8e1;
-  color: #d4a106;
-}
-.condition-badge.danger {
-  background: #ffe7e7;
-  color: #e23d3d;
-}
+.condition-badge.good { background: #e9f8f3; color: #1aa37a; }
+.condition-badge.warn { background: #fff8e1; color: #d4a106; }
+/* 기본 danger 색(연한 톤) — 아래 톤다운 규칙이 !important로 덮습니다 */
+.condition-badge.danger { background: #ffe7e7; color: #e23d3d; }
 
-/* 위험 테마 토글 */
+/* 업데이트 텍스트 */
+.info-row--update { justify-content: flex-end; margin-top: 4px; }
+.info-row--update .update-time { font-size: 10px; color: #7a7a7a; text-align: right; }
+
+/* ===============================
+   🔻 위험 테마 톤다운 (최종 적용)
+   =============================== */
 .profile-card.danger,
 .health-card.danger {
-  border-color: #ffdddd;
-  box-shadow: 0 0 0 2px rgba(226, 61, 61, 0.08);
+  border: 2px solid #f26a6a !important;
+  box-shadow:
+    0 0 0 2px rgba(242, 106, 106, 0.08),
+    0 6px 16px rgba(242, 106, 106, 0.22);
+  animation: dangerPulseSoft 2.2s ease-in-out infinite;
 }
 
-.info-row--update {
-  justify-content: flex-end;
-  margin-top: 4px;
+.condition-badge.danger {
+  background: #f26a6a !important;
+  color: #fff !important;
+  border: 0 !important;
+  box-shadow: 0 0 0 3px rgba(242, 106, 106, 0.16);
 }
 
-.info-row--update .update-time {
-  font-size: 10px;
-  color: #7a7a7a;
-  text-align: right;
+@keyframes dangerPulseSoft {
+  0% {
+    box-shadow:
+      0 0 0 2px rgba(242,106,106,0.06),
+      0 6px 16px rgba(242,106,106,0.18);
+  }
+  50% {
+    box-shadow:
+      0 0 0 3px rgba(242,106,106,0.12),
+      0 8px 20px rgba(242,106,106,0.26);
+  }
+  100% {
+    box-shadow:
+      0 0 0 2px rgba(242,106,106,0.06),
+      0 6px 16px rgba(242,106,106,0.18);
+  }
 }
+
+/* 심박수 타임라인 (작고 가벼운 스타일) */
+.hr-trend { margin-top: 10px; border-top: 1px dashed #eee; padding-top: 10px; }
+.hr-trend-title { font-size: 12px; color: #777; margin-bottom: 6px; }
+.hr-trend-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.hr-trend-list li { display: flex; justify-content: space-between; font-size: 12px; }
+.hr-time { color: #666; }
+.hr-bpm { font-weight: 600; color: #222; }

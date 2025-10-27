@@ -3,7 +3,7 @@ import { BASE_URL } from "../env";
 
 export type LocationPayload = {
   driverId?: number;
-  userId?: number | string;      // ✅ 추가: 위치 메시지에도 userId 허용
+  userId?: number | string; // 위치 메시지에도 userId 허용
   driverName?: string;
   region?: string;
   lat?: number;
@@ -44,8 +44,8 @@ export interface ConnectOptions {
   onClose?: (ev: CloseEvent) => void;
   handlers?: ConnectHandlers;
   reconnect?: boolean;
-  maxRetries?: number;       // 기본 3
-  retryDelayMs?: number;     // 기본 2000ms
+  maxRetries?: number;   // 기본 3
+  retryDelayMs?: number; // 기본 2000ms
 }
 
 /** Token */
@@ -57,17 +57,33 @@ function getAccessToken(): string {
   );
 }
 
+/** region 문자열에서 'OO구'만 추출 (서버가 구 단위만 받는 경우 400 방지) */
+function sanitizeRegion(v?: string): string | undefined {
+  if (!v) return undefined;
+  const m = String(v).match(/([가-힣A-Za-z]+구)/);
+  return m ? m[1] : undefined;
+}
+
 /** BASE_URL → ws(s) URL */
 function buildUrl(as: "web" | "mobile", region?: string): string {
   const token = getAccessToken();
-  const u = new URL(BASE_URL);
-  u.protocol = u.protocol.replace("http", "ws");
+
+  // BASE_URL 기준 + 현재 페이지 프로토콜 기준으로 ws/wss 결정
+  const base = new URL(BASE_URL);
+  const pageIsHttps = typeof window !== "undefined" && window.location.protocol === "https:";
+  const mustSecure = pageIsHttps || base.protocol === "https:";
+  const wsProtocol = mustSecure ? "wss:" : "ws:";
+
+  const u = new URL(base.toString());
+  u.protocol = wsProtocol;
   u.pathname = "/ws/location";
 
   const qs = new URLSearchParams();
   if (token) qs.set("token", token);
   qs.set("as", as);
-  if (region) qs.set("region", region);
+
+  const gu = sanitizeRegion(region);
+  if (gu) qs.set("region", gu);
 
   u.search = qs.toString();
   return u.toString();
@@ -174,7 +190,9 @@ export function connectLocationWS(opts: ConnectOptions): () => void {
       ws &&
       (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)
     ) {
-      try { ws.close(1000, "client-close"); } catch {}
+      try {
+        ws.close(1000, "client-close");
+      } catch {}
     }
     ws = null;
   };

@@ -1,77 +1,67 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Map as KakaoMap, MapMarker } from "react-kakao-maps-sdk";
 
-declare global {
-  interface Window {
-    kakao: any;
-  }
-}
+declare global { interface Window { kakao: any; } }
 
-export interface LatLng {
-  lat: number;
-  lng: number;
-}
+export interface LatLng { lat: number; lng: number; }
 
 export interface DetailMapProps {
-  /** (선택) 지오코딩용 주소 목록 — coords가 없을 때만 사용 */
   addresses?: string[];
-  /** (선택) 마커 좌표 목록 — 주(source). 있으면 주소는 무시 */
   coords?: LatLng[];
-  /** (선택) 지도 중심 좌표 — 없으면 coords[0] / addresses[0] / DEFAULT */
   centerCoord?: LatLng;
-  /** (선택) 주소 중심 — centerCoord/coords가 없을 때만 사용 */
   centerAddress?: string;
-  /** 카카오 레벨 (작을수록 가까이: 5≈1km, 8≈4km 근처) */
+  /** 작을수록 더 확대됨 (기본 8) */
   level?: number;
   markerImageUrls?: string[];
   markerSize?: { width: number; height: number };
   onMarkerClick?: (idx: number) => void;
+  /** 여러 마커일 때 fitBounds 후 추가 확대/축소(음수면 확대). 기본 -1 */
+  fitBiasAfterBounds?: number;
 }
 
 const DEFAULT_CENTER: LatLng = { lat: 37.5665, lng: 126.978 };
 
 const DetailMap: React.FC<DetailMapProps> = ({
-  addresses,
-  coords,
-  centerCoord,
-  centerAddress,
-  level = 8,
+  addresses, coords, centerCoord, centerAddress,
+  level = 6,                   // 기본 더 줌인
   markerImageUrls,
   markerSize = { width: 35, height: 45 },
   onMarkerClick,
+  fitBiasAfterBounds = -2,     // 기본 더 줌인
 }) => {
   const [ready, setReady] = useState(false);
   const [geoPoints, setGeoPoints] = useState<LatLng[]>([]);
   const [addrCenter, setAddrCenter] = useState<LatLng | null>(null);
 
-  // 맵/컨테이너 참조
   const mapRef = useRef<kakao.maps.Map | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  const addrList = useMemo<string[]>(
-    () => (Array.isArray(addresses) ? addresses : []),
-    [addresses]
-  );
+  const addrList = useMemo<string[]>(() => (Array.isArray(addresses) ? addresses : []), [addresses]);
 
+  // ✅ Kakao SDK 늦게 로드돼도 자동 감지해서 ready 설정
   useEffect(() => {
-    setReady(!!window.kakao?.maps);
+    if (window.kakao?.maps) setReady(true);
+    const wait = setInterval(() => {
+      if (window.kakao?.maps?.services) {
+        setReady(true);
+        clearInterval(wait);
+      }
+    }, 300);
+    return () => clearInterval(wait);
   }, []);
 
-  // 컨테이너 크기 변경 시 relayout
   useEffect(() => {
     if (!containerRef.current) return;
-    const ro = new ResizeObserver(() => {
-      if (mapRef.current) mapRef.current.relayout();
-    });
+    const ro = new ResizeObserver(() => { if (mapRef.current) mapRef.current.relayout(); });
     ro.observe(containerRef.current);
     return () => ro.disconnect();
   }, []);
 
-  // 주소 → 좌표 변환 (coords가 없을 때만)
+  // 주소 → 좌표 (coords 없을 때만)
   useEffect(() => {
     if (!ready) return;
     if (Array.isArray(coords) && coords.length > 0) return;
-    if (!window.kakao.maps.services) return;
+    if (!window.kakao?.maps?.services) return;
 
     if (addrList.length === 0) {
       setGeoPoints((prev) => (prev.length ? [] : prev));
@@ -99,17 +89,13 @@ const DetailMap: React.FC<DetailMapProps> = ({
       .then((locs) => {
         const same =
           locs.length === geoPoints.length &&
-          locs.every(
-            (p, i) => p.lat === geoPoints[i]?.lat && p.lng === geoPoints[i]?.lng
-          );
+          locs.every((p, i) => p.lat === geoPoints[i]?.lat && p.lng === geoPoints[i]?.lng);
         if (!same) setGeoPoints(locs);
       })
-      .catch(() => {
-        if (geoPoints.length) setGeoPoints([]);
-      });
+      .catch(() => { if (geoPoints.length) setGeoPoints([]); });
   }, [ready, addrList, coords, geoPoints.length]);
 
-  // 주소 중심 계산 (centerCoord/coords가 없을 때만)
+  // 주소 중심 (centerCoord/coords 없을 때만)
   useEffect(() => {
     if (!ready) return;
     if (centerCoord || (Array.isArray(coords) && coords.length > 0)) {
@@ -117,7 +103,7 @@ const DetailMap: React.FC<DetailMapProps> = ({
       return;
     }
     const useAddr = (centerAddress || addrList[0] || "").trim();
-    if (!useAddr || !window.kakao.maps.services) {
+    if (!useAddr || !window.kakao?.maps?.services) {
       if (addrCenter !== null) setAddrCenter(null);
       return;
     }
@@ -126,22 +112,18 @@ const DetailMap: React.FC<DetailMapProps> = ({
       if (status === window.kakao.maps.services.Status.OK && res?.[0]) {
         const { x, y } = res[0];
         const next = { lat: parseFloat(y), lng: parseFloat(x) };
-        if (addrCenter?.lat !== next.lat || addrCenter?.lng !== next.lng) {
-          setAddrCenter(next);
-        }
+        if (addrCenter?.lat !== next.lat || addrCenter?.lng !== next.lng) setAddrCenter(next);
       } else {
         if (addrCenter !== null) setAddrCenter(null);
       }
     });
   }, [ready, centerCoord, coords, centerAddress, addrList, addrCenter]);
 
-  // 마커 리스트
   const markerPoints: LatLng[] = useMemo(() => {
     if (Array.isArray(coords) && coords.length > 0) return coords;
     return geoPoints;
   }, [coords, geoPoints]);
 
-  // 중심
   const center: LatLng = useMemo(() => {
     if (centerCoord) return centerCoord;
     if (Array.isArray(coords) && coords.length > 0) return coords[0];
@@ -150,48 +132,43 @@ const DetailMap: React.FC<DetailMapProps> = ({
     return DEFAULT_CENTER;
   }, [centerCoord, coords, addrCenter, geoPoints]);
 
-  // 마커가 바뀌면 화면에 모두 보이도록 fitBounds + relayout
+  // 마커 변경 시 화면 맞춤 + 살짝 더 확대(bias)
   useEffect(() => {
-    if (!mapRef.current) return;
-    if (markerPoints.length === 0) {
-      mapRef.current.relayout();
-      return;
-    }
+    const map = mapRef.current;
+    if (!map) return;
+
+    if (markerPoints.length === 0) { map.relayout(); return; }
+
     if (markerPoints.length === 1) {
       const p = markerPoints[0];
-      mapRef.current.setCenter(new window.kakao.maps.LatLng(p.lat, p.lng));
-      mapRef.current.relayout();
+      map.setCenter(new window.kakao.maps.LatLng(p.lat, p.lng));
+      // ✅ 단일 마커는 전달 level보다 더 확대
+      map.setLevel(Math.max(1, level - 2));
+      map.relayout();
       return;
     }
-    const bounds = new window.kakao.maps.LatLngBounds();
-    markerPoints.forEach((p) =>
-      bounds.extend(new window.kakao.maps.LatLng(p.lat, p.lng))
-    );
-    mapRef.current.setBounds(bounds);
-    mapRef.current.relayout();
-  }, [markerPoints]);
 
-  // ✅ 마커 이미지 배열 보정: 1장만 오면 반복, 부족하면 마지막 이미지로 채움
+    const bounds = new window.kakao.maps.LatLngBounds();
+    markerPoints.forEach((p) => bounds.extend(new window.kakao.maps.LatLng(p.lat, p.lng)));
+    map.setBounds(bounds);
+    if (fitBiasAfterBounds && fitBiasAfterBounds !== 0) {
+      const cur = map.getLevel();
+      const next = Math.max(1, cur + fitBiasAfterBounds);
+      if (next !== cur) map.setLevel(next);
+    }
+    map.relayout();
+  }, [markerPoints, level, fitBiasAfterBounds]);
+
+  // 마커 이미지 배열 보정
   const resolvedMarkerImages = useMemo(() => {
     if (!markerImageUrls || markerImageUrls.length === 0) return [];
     if (markerImageUrls.length === markerPoints.length) return markerImageUrls;
-    if (markerImageUrls.length === 1) {
-      return Array(markerPoints.length).fill(markerImageUrls[0]);
-    }
-    return markerPoints.map(
-      (_p, i) =>
-        markerImageUrls[i] ??
-        markerImageUrls[markerImageUrls.length - 1]
-    );
+    if (markerImageUrls.length === 1) return Array(markerPoints.length).fill(markerImageUrls[0]);
+    return markerPoints.map((_p, i) => markerImageUrls[i] ?? markerImageUrls[markerImageUrls.length - 1]);
   }, [markerImageUrls, markerPoints.length]);
 
   if (!ready) {
-    return (
-      <div
-        ref={containerRef}
-        style={{ width: "100%", height: "100%", background: "#e6e6e6" }}
-      />
-    );
+    return <div ref={containerRef} style={{ width: "100%", height: "100%", background: "#e6e6e6" }} />;
   }
 
   return (
@@ -203,7 +180,6 @@ const DetailMap: React.FC<DetailMapProps> = ({
         style={{ width: "100%", height: "100%" }}
         onCreate={(map) => {
           mapRef.current = map;
-          // 컨테이너가 늦게 보이는 레이아웃에서도 안전
           setTimeout(() => map.relayout(), 0);
         }}
       >
