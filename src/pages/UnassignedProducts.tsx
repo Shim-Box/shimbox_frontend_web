@@ -19,7 +19,7 @@ type UnassignedItem = {
 
 type FieldKey = "ALL" | "productName" | "recipientName" | "address" | "postalCode";
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 20; // 페이지네이션 값은 유지 (items가 10건이므로 1페이지로 표시됨)
 const ANIM_MS = 450; // CSS와 동일(0.85s)
 const GAP_MS = 80;  // 다음 줄로 넘어가기 전 약간의 텀
 
@@ -49,7 +49,11 @@ const UnassignedProduct: React.FC = () => {
     if (!token) return;
     setLoading(true);
     ApiService.fetchUnassignedProducts()
-      .then((list) => setItems(Array.isArray(list) ? list : []))
+      .then((list) => {
+        const validList = Array.isArray(list) ? list : [];
+        // ✅ 받아온 전체 목록 중 앞의 10건만 화면에 보여주기
+        setItems(validList.slice(0, 10));
+      })
       .catch(() => setItems([]))
       .finally(() => setLoading(false));
   }, [token]);

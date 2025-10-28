@@ -198,12 +198,9 @@ const DriverDetail: React.FC = () => {
       // 타임라인 최신 ts 선-fetch 후 재정렬
       await prefetchLatestTimelineTs(completed);
       const completedSorted2 = sortCompletedByTimeline(completed);
-      // 캐시가 갱신되어 순서가 달라졌다면 다시 반영
-      setCompleted((prev) => {
-        const prevIds = prev.map((x) => x.productId).join(",");
-        const nextIds = completedSorted2.map((x) => x.productId).join(",");
-        return prevIds === nextIds ? prev : completedSorted2;
-      });
+
+      // ✅ 항상 최신 정렬 결과를 반영 (ID 순서만 비교하여 건너뛰지 않음)
+      setCompleted(completedSorted2);
 
       // 상태 시그니처 변동 시 선택된 타임라인만 재조회
       const newSig = buildStatusSig(items);
