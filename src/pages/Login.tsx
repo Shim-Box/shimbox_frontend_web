@@ -2,7 +2,6 @@ import React, { useState, useContext, useEffect } from "react";
 import "../styles/Login.css";
 import { useNavigate } from "react-router-dom";
 import { ApiService } from "../services/apiService";
-import { SignupData } from "../models/SignupData";
 import { AuthContext } from "../context/AuthContext";
 
 const Login: React.FC = () => {
@@ -15,8 +14,8 @@ const Login: React.FC = () => {
     }
   }, [isLoggedIn, navigate]);
 
-  const [username, setUsername] = useState("admin@gmail.com");
-  const [password, setPassword] = useState("12341234");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -24,13 +23,10 @@ const Login: React.FC = () => {
     setErrorMsg(null);
     setLoading(true);
     try {
-      // 회원가입용 클래스 대신, 로그인은 POJO로(email/password만) 보냄
+      // 로그인 (email/password)
       const tokens = await ApiService.login({ email: username, password });
 
-      // 컨텍스트 & 스토리지 저장
       setToken(tokens.accessToken);
-      localStorage.setItem("accessToken", tokens.accessToken);
-      sessionStorage.setItem("refreshToken", tokens.refreshToken);
 
       navigate("/main", { replace: true });
     } catch (err: any) {
@@ -60,6 +56,7 @@ const Login: React.FC = () => {
           onChange={(e) => setUsername(e.target.value)}
           onKeyDown={onKeyDown}
           autoFocus
+          autoComplete="username"
         />
 
         <input
@@ -69,6 +66,7 @@ const Login: React.FC = () => {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           onKeyDown={onKeyDown}
+          autoComplete="current-password"
         />
 
         {errorMsg && (
@@ -79,6 +77,7 @@ const Login: React.FC = () => {
           className="login-button"
           onClick={handleLogin}
           disabled={loading}
+          type="button"
         >
           {loading ? "로그인 중..." : "로그인"}
         </button>

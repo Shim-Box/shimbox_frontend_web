@@ -1,63 +1,89 @@
-// src/App.tsx
 import React, { useContext } from "react";
-import {
-  BrowserRouter,
-  Routes,
-  Route,
-  Navigate,
-  Outlet,
-} from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+
 import { AuthProvider, AuthContext } from "./context/AuthContext";
-import Login from "./pages/Login";
+import { NotificationsProvider } from "./context/NotificationsProvider";
+
 import Main from "./pages/Main";
-import Register from "./pages/Register";
+import Login from "./pages/Login";
 import Manage from "./pages/Manage";
 import DriverDetail from "./pages/DriverDetail";
-import PopupNotice from "./components/PopupNotice";
-import { NotificationsProvider } from "./context/NotificationsProvider";
+import Register from "./pages/Register";
 import UnassignedProducts from "./pages/UnassignedProducts";
+import PopupNotice from "./components/PopupNotice";
 
-const PrivateRoute: React.FC = () => {
+/** 보호 라우트: 비로그인이면 메인("/")으로 */
+function Protected({ children }: { children: React.ReactElement }) {
   const { isLoggedIn, loading } = useContext(AuthContext);
-  if (loading) return null;
+  if (loading) return null; // 초기 로딩 깜빡임 방지
+  return isLoggedIn ? children : <Navigate to="/" replace />;
+}
 
-  return isLoggedIn ? (
-    <>
+/** Provider 안에서만 token을 읽도록 분리 */
+function AppShell() {
+  const { token } = useContext(AuthContext); // ★ 이제 Provider 내부
+
+  return (
+    <BrowserRouter>
       <PopupNotice />
-      <Outlet />
-    </>
-  ) : (
-    <Navigate to="/login" replace />
+
+      {/* ★ token 변할 때 마다 라우트 트리 리마운트(잔재 초기화) */}
+      <Routes key={token ? "auth" : "guest"}>
+        {/* 첫 접속은 메인 페이지 */}
+        <Route path="/" element={<Main />} />
+
+        {/* 인증 불필요한 페이지 */}
+        <Route path="/login" element={<Login />} />
+
+        {/* ===== 로그인 필요(가드) 페이지들 ===== */}
+        <Route
+          path="/manage"
+          element={
+            <Protected>
+              <Manage />
+            </Protected>
+          }
+        />
+
+        <Route
+          path="/driver/:id"
+          element={
+            <Protected>
+              <DriverDetail />
+            </Protected>
+          }
+        />
+
+        <Route
+          path="/register"
+          element={
+            <Protected>
+              <Register />
+            </Protected>
+          }
+        />
+
+        <Route
+          path="/products/unassigned"
+          element={
+            <Protected>
+              <UnassignedProducts />
+            </Protected>
+          }
+        />
+
+        {/* 그 외 경로는 메인으로 */}
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </BrowserRouter>
   );
-};
+}
 
 function App() {
   return (
     <AuthProvider>
       <NotificationsProvider>
-        <BrowserRouter>
-          <Routes>
-            {/* 공개 라우트 */}
-            <Route path="/" element={<Navigate to="/login" replace />} />
-            <Route path="/login" element={<Login />} />
-            <Route path="/register" element={<Register />} />
-
-            {/* 보호 라우트 (로그인 필요) */}
-            <Route element={<PrivateRoute />}>
-              <Route path="/main" element={<Main />} />
-              <Route path="/manage" element={<Manage />} />
-              <Route path="/driver/:id" element={<DriverDetail />} />
-            </Route>
-
-            {/* fallback */}
-            <Route path="*" element={<Navigate to="/login" replace />} />
-
-            <Route
-              path="/products/unassigned"
-              element={<UnassignedProducts />}
-            />
-          </Routes>
-        </BrowserRouter>
+        <AppShell />
       </NotificationsProvider>
     </AuthProvider>
   );

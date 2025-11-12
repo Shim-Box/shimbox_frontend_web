@@ -28,7 +28,7 @@ const Footer: React.FC<FooterProps> = ({
   const inputRef = useRef<HTMLInputElement>(null);
 
   const navigate = useNavigate();
-  const { setToken } = useContext(AuthContext);
+  const { isLoggedIn, setToken } = useContext(AuthContext);
 
   // 시계
   const [now, setNow] = useState<Date>(new Date());
@@ -97,16 +97,18 @@ const Footer: React.FC<FooterProps> = ({
     };
   }, [now]);
 
-  // 로그아웃
-  const handleLogout = () => {
-    try {
-      localStorage.removeItem("accessToken");
-      sessionStorage.removeItem("accessToken");
-      sessionStorage.removeItem("refreshToken");
+  const handleAuthClick = () => {
+    if (isLoggedIn) {
+      try {
+        localStorage.removeItem("accessToken");
+        localStorage.removeItem("monitorToken");
+        sessionStorage.removeItem("accessToken");
+        sessionStorage.removeItem("refreshToken");
+        sessionStorage.removeItem("monitorToken");
+      } catch {}
       setToken?.(null);
-      navigate("/login", { replace: true });
-    } catch (e) {
-      console.error("로그아웃 중 오류:", e);
+      navigate("/", { replace: true });
+    } else {
       navigate("/login", { replace: true });
     }
   };
@@ -134,7 +136,7 @@ const Footer: React.FC<FooterProps> = ({
               r="7"
               stroke="currentColor"
               strokeWidth="2"
-            ></circle>
+            />
             <line
               x1="16.65"
               y1="16.65"
@@ -143,7 +145,7 @@ const Footer: React.FC<FooterProps> = ({
               stroke="currentColor"
               strokeWidth="2"
               strokeLinecap="round"
-            ></line>
+            />
           </svg>
         </button>
 
@@ -163,11 +165,11 @@ const Footer: React.FC<FooterProps> = ({
       <div className="footer-right">
         <button
           className="logout-btn"
-          onClick={handleLogout}
-          title="로그아웃"
+          onClick={handleAuthClick}
+          title={isLoggedIn ? "로그아웃" : "로그인"}
           type="button"
         >
-          로그아웃
+          {isLoggedIn ? "로그아웃" : "로그인"}
         </button>
 
         <div className="clock-box" role="timer" aria-live="polite">
