@@ -1,4 +1,7 @@
-import { BASE_URL } from "../env";
+const BASE_URL =
+  (typeof process !== "undefined"
+    ? (process as any).env?.REACT_APP_API_BASE_URL
+    : undefined) || "http://116.39.208.72:26443";
 
 export type LocationPayload = {
   driverId?: number;
@@ -62,8 +65,10 @@ export function sanitizeRegion(v?: string): string | undefined {
 
 function buildUrl(as: "web" | "mobile", region?: string): string {
   const token = getAccessToken();
+
   const base = new URL(BASE_URL);
-  const pageIsHttps = typeof window !== "undefined" && window.location.protocol === "https:";
+  const pageIsHttps =
+    typeof window !== "undefined" && window.location.protocol === "https:";
   const mustSecure = pageIsHttps || base.protocol === "https:";
   const wsProtocol = mustSecure ? "wss:" : "ws:";
 
@@ -155,15 +160,18 @@ export function connectLocationWS(opts: ConnectOptions): () => void {
         let payload = obj?.payload ?? obj;
 
         if (!type) {
-          const looksLoc = payload && typeof payload.lat === "number" && typeof payload.lng === "number";
+          const looksLoc =
+            payload &&
+            typeof payload.lat === "number" &&
+            typeof payload.lng === "number";
           const looksHealth =
             payload &&
             ("isFallDetected" in payload ||
-             "heartRate" in payload ||
-             "step" in payload ||
-             "level" in payload ||
-             "score" in payload ||
-             "fatigueScore" in payload);
+              "heartRate" in payload ||
+              "step" in payload ||
+              "level" in payload ||
+              "score" in payload ||
+              "fatigueScore" in payload);
 
           if (looksLoc) type = "location";
           else if (looksHealth) type = "health";
@@ -199,8 +207,14 @@ export function connectLocationWS(opts: ConnectOptions): () => void {
       window.clearTimeout(retryTimer);
       retryTimer = null;
     }
-    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
-      try { ws.close(1000, "client-close"); } catch {}
+    if (
+      ws &&
+      (ws.readyState === WebSocket.OPEN ||
+        ws.readyState === WebSocket.CONNECTING)
+    ) {
+      try {
+        ws.close(1000, "client-close");
+      } catch {}
     }
     ws = null;
   };

@@ -1,5 +1,4 @@
 import axios, { AxiosError, AxiosResponse, AxiosRequestHeaders } from "axios";
-import { BASE_URL } from "../env";
 import { ApiResponse } from "../models/ApiResponse";
 import {
   AdminSignupData,
@@ -19,6 +18,8 @@ import { PaginatedResponse } from "../models/PaginatedResponse";
 /** ─────────── 토큰 유틸 ─────────── */
 const ACCESS_KEY = "accessToken";
 const REFRESH_KEY = "refreshToken";
+
+const BASE_URL = process.env.REACT_APP_API_BASE_URL;
 
 function getAccessToken() {
   // ✅ 세션스토리지만 사용: 창/탭 닫히면 자동 로그아웃

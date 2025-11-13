@@ -5,6 +5,7 @@ declare global {
   interface Window {
     google?: any;
     __GMAPS_LOADING__?: Promise<void>;
+    __GMAPS_KEY?: string;
   }
 }
 
@@ -24,27 +25,35 @@ export interface DetailMapProps {
   markerSize?: { width: number; height: number };
   onMarkerClick?: (idx: number) => void;
   /** 여러 마커일 때 fitBounds 후 추가 확대/축소(음수면 확대). 기본 -2 */
-  /** 여러 마커일 때 fitBounds 후 추가 확대/축소(음수면 확대). 기본 -2 */
   fitBiasAfterBounds?: number;
 }
 
 /** ─────────────────────────────────────────────────────────
  *  🔑 Google Maps API Key 주입 규칙(우선순위)
- *  1) import.meta.env.VITE_GOOGLE_MAPS_API_KEY (Vite)
- *  2) process.env.GOOGLE_MAPS_API_KEY (CRA/Node)
+ *  1) process.env.REACT_APP_GOOGLE_MAPS_API_KEY (.env)
+ *  2) process.env.GOOGLE_MAPS_API_KEY
  *  3) window.__GMAPS_KEY (전역 주입)
- *  4) 하드코딩(최후 수단): 아래 DEFAULT_FALLBACK_KEY
- * 
- *  👉 실제 배포에서는 (1)이나 (2) 사용 권장. 하드코딩 키는 삭제하세요!
+ *  4) 하드코딩(최후 수단): DEFAULT_FALLBACK_KEY
  * ───────────────────────────────────────────────────────── */
+
+// ⚠️ 실제로는 이 키를 .env로 옮기는 걸 강력 추천!
+// .env 에 REACT_APP_GOOGLE_MAPS_API_KEY=... 로 넣고,
+// 여기 fallback 은 제거해도 됩니다.
 const DEFAULT_FALLBACK_KEY = "AIzaSyDcaQDrzTPJQ1bT2feHqyyo-LA_ijEXHCs";
 
 function resolveApiKey(): string {
-  // @ts-ignore
-  const fromVite = typeof import.meta !== "undefined" ? (import.meta as any).env?.VITE_GOOGLE_MAPS_API_KEY : undefined;
-  const fromNode = typeof process !== "undefined" ? (process as any).env?.GOOGLE_MAPS_API_KEY : undefined;
-  const fromWin  = typeof window !== "undefined" ? (window as any).__GMAPS_KEY : undefined;
-  return fromVite || fromNode || fromWin || DEFAULT_FALLBACK_KEY;
+  const fromReactEnv =
+    typeof process !== "undefined"
+      ? (process as any).env?.REACT_APP_GOOGLE_MAPS_API_KEY
+      : undefined;
+  const fromNodeEnv =
+    typeof process !== "undefined"
+      ? (process as any).env?.GOOGLE_MAPS_API_KEY
+      : undefined;
+  const fromWin =
+    typeof window !== "undefined" ? window.__GMAPS_KEY : undefined;
+
+  return fromReactEnv || fromNodeEnv || fromWin || DEFAULT_FALLBACK_KEY;
 }
 
 /** Google Maps JS API 로더 (중복 로딩 방지) */
@@ -55,7 +64,9 @@ async function loadGoogleMaps(): Promise<void> {
   const key = resolveApiKey();
   window.__GMAPS_LOADING__ = new Promise<void>((resolve, reject) => {
     const s = document.createElement("script");
-    s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&libraries=places`;
+    s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(
+      key
+    )}&libraries=places`;
     s.async = true;
     s.defer = true;
     s.onload = () => resolve();
@@ -74,33 +85,12 @@ const DetailMap: React.FC<DetailMapProps> = ({
   centerCoord,
   centerAddress,
   level = 6,
-  addresses,
-  coords,
-  centerCoord,
-  centerAddress,
-  level = 6,
   markerImageUrls,
   markerSize = { width: 35, height: 45 },
   onMarkerClick,
   fitBiasAfterBounds = -2,
-  fitBiasAfterBounds = -2,
 }) => {
-  // ✅ 카카오 SDK는 *오직 이 로더*로만 로드 (index.html의 <script> 금지)
-  useKakaoLoader({
-    appkey: process.env.REACT_APP_KAKAO_JS_KEY as string,
-    libraries: ["services", "clusterer", "drawing"],
-  });
-
-  const mapRef = useRef<any>(null);
-  const containerRef = useRef<HTMLDivElement | null>(null);
-
-  const addrList = useMemo<string[]>(
-    () => (Array.isArray(addresses) ? addresses : []),
-    [addresses]
-  );
-
-  const [geoPoints, setGeoPoints] = useState<LatLng[]>([]);
-  const [addrCenter, setAddrCenter] = useState<LatLng | null>(null);
+  const [ready, setReady] = useState(false);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<any | null>(null);
@@ -111,13 +101,22 @@ const DetailMap: React.FC<DetailMapProps> = ({
     [addresses]
   );
 
-  /** 1) SDK 로드 */
+  const [geoPoints, setGeoPoints] = useState<LatLng[]>([]);
+  const [addrCenter, setAddrCenter] = useState<LatLng | null>(null);
+
+  /** 1) Google Maps SDK 로드 */
   useEffect(() => {
     let canceled = false;
     loadGoogleMaps()
-      .then(() => { if (!canceled) setReady(true); })
-      .catch(() => { /* fail silent */ });
-    return () => { canceled = true; };
+      .then(() => {
+        if (!canceled) setReady(true);
+      })
+      .catch(() => {
+        // 실패해도 앱이 죽진 않게 조용히 무시
+      });
+    return () => {
+      canceled = true;
+    };
   }, []);
 
   /** 2) 맵 초기화 & ResizeObserver */
@@ -140,7 +139,7 @@ const DetailMap: React.FC<DetailMapProps> = ({
     return () => ro.disconnect();
   }, [ready, level]);
 
-  /** 3) 주소 → 좌표 (coords 비었을 때만) */
+  /** 3) 주소 -> 좌표 (coords 비었을 때만) */
   useEffect(() => {
     if (!ready) return;
     if (Array.isArray(coords) && coords.length > 0) return;
@@ -149,22 +148,24 @@ const DetailMap: React.FC<DetailMapProps> = ({
       setGeoPoints((prev) => (prev.length ? [] : prev));
       return;
     }
-    if (!window.kakao?.maps?.services) return; // SDK 아직이면 다음 렌더에서 자동 재시도
+    if (!window.google?.maps?.Geocoder) return;
 
     const geocoder = new window.google.maps.Geocoder();
-    Promise.all(addrList.map(addr => geocodeToLatLng(geocoder, addr)))
+    Promise.all(addrList.map((addr) => geocodeToLatLng(geocoder, addr)))
       .then((locs) => {
         setGeoPoints((prev) => {
           const same =
             locs.length === prev.length &&
-            locs.every((p, i) => p.lat === prev[i]?.lat && p.lng === prev[i]?.lng);
+            locs.every(
+              (p, i) => p.lat === prev[i]?.lat && p.lng === prev[i]?.lng
+            );
           return same ? prev : locs;
         });
       })
       .catch(() => setGeoPoints([]));
   }, [ready, addrList, coords]);
 
-  /** 4) 중심 주소 → 좌표 (centerCoord/coords 없을 때만) */
+  /** 4) 중심 주소 -> 좌표 (centerCoord/coords 없을 때만) */
   useEffect(() => {
     if (centerCoord || (Array.isArray(coords) && coords.length > 0)) {
       if (addrCenter !== null) setAddrCenter(null);
@@ -173,10 +174,11 @@ const DetailMap: React.FC<DetailMapProps> = ({
 
     const useAddr = (centerAddress || addrList[0] || "").trim();
     if (!useAddr) {
-    if (!useAddr) {
       if (addrCenter !== null) setAddrCenter(null);
       return;
     }
+
+    if (!ready || !window.google?.maps?.Geocoder) return;
 
     const geocoder = new window.google.maps.Geocoder();
     geocodeToLatLng(geocoder, useAddr)
@@ -214,8 +216,13 @@ const DetailMap: React.FC<DetailMapProps> = ({
     const resolvedMarkerImages: string[] = (() => {
       if (!markerImageUrls || markerImageUrls.length === 0) return [];
       if (markerImageUrls.length === markerPoints.length) return markerImageUrls;
-      if (markerImageUrls.length === 1) return Array(markerPoints.length).fill(markerImageUrls[0]);
-      return markerPoints.map((_p, i) => markerImageUrls[i] ?? markerImageUrls[markerImageUrls.length - 1]);
+      if (markerImageUrls.length === 1)
+        return Array(markerPoints.length).fill(markerImageUrls[0]);
+      return markerPoints.map(
+        (_p, i) =>
+          markerImageUrls[i] ??
+          markerImageUrls[markerImageUrls.length - 1]
+      );
     })();
 
     // 마커 생성
@@ -259,11 +266,20 @@ const DetailMap: React.FC<DetailMapProps> = ({
     map.fitBounds(bounds);
 
     if (fitBiasAfterBounds && fitBiasAfterBounds !== 0) {
-      // fit 후 현재 줌에 바이어스 적용
       const cur = map.getZoom();
-      map.setZoom(Math.max(1, cur - fitBiasAfterBounds)); // kakao level 감소=줌인 → google zoom 증가
+      // kakao level 감소 = 줌인 → google zoom 증가 (fitBias가 음수면 확대)
+      map.setZoom(Math.max(1, cur - fitBiasAfterBounds));
     }
-  }, [ready, markerPoints, center, level, markerImageUrls, markerSize, onMarkerClick, fitBiasAfterBounds]);
+  }, [
+    ready,
+    markerPoints,
+    center,
+    level,
+    markerImageUrls,
+    markerSize,
+    onMarkerClick,
+    fitBiasAfterBounds,
+  ]);
 
   /** 8) 중심만 바뀌는 경우 */
   useEffect(() => {
@@ -271,19 +287,7 @@ const DetailMap: React.FC<DetailMapProps> = ({
     (mapRef.current as any).setCenter(center);
   }, [ready, center]);
 
-  // 🔑 환경변수 누락 시 안내 (개발 중 디버깅용)
-  useEffect(() => {
-    if (!process.env.REACT_APP_KAKAO_JS_KEY) {
-      // eslint-disable-next-line no-console
-      console.warn(
-        "[DetailMap] REACT_APP_KAKAO_JS_KEY 가 비어있습니다. .env를 확인하세요."
-      );
-    }
-  }, []);
-
-  return (
-    <div ref={containerRef} style={{ width: "100%", height: "100%" }} />
-  );
+  return <div ref={containerRef} style={{ width: "100%", height: "100%" }} />;
 };
 
 /** 주소 → LatLng */
