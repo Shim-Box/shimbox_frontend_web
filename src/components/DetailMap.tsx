@@ -1,3 +1,4 @@
+// src/components/DetailMap.tsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
 declare global {
@@ -7,7 +8,10 @@ declare global {
   }
 }
 
-export interface LatLng { lat: number; lng: number; }
+export interface LatLng {
+  lat: number;
+  lng: number;
+}
 
 export interface DetailMapProps {
   addresses?: string[];
@@ -19,6 +23,7 @@ export interface DetailMapProps {
   markerImageUrls?: string[];
   markerSize?: { width: number; height: number };
   onMarkerClick?: (idx: number) => void;
+  /** 여러 마커일 때 fitBounds 후 추가 확대/축소(음수면 확대). 기본 -2 */
   /** 여러 마커일 때 fitBounds 후 추가 확대/축소(음수면 확대). 기본 -2 */
   fitBiasAfterBounds?: number;
 }
@@ -69,12 +74,31 @@ const DetailMap: React.FC<DetailMapProps> = ({
   centerCoord,
   centerAddress,
   level = 6,
+  addresses,
+  coords,
+  centerCoord,
+  centerAddress,
+  level = 6,
   markerImageUrls,
   markerSize = { width: 35, height: 45 },
   onMarkerClick,
   fitBiasAfterBounds = -2,
+  fitBiasAfterBounds = -2,
 }) => {
-  const [ready, setReady] = useState(false);
+  // ✅ 카카오 SDK는 *오직 이 로더*로만 로드 (index.html의 <script> 금지)
+  useKakaoLoader({
+    appkey: process.env.REACT_APP_KAKAO_JS_KEY as string,
+    libraries: ["services", "clusterer", "drawing"],
+  });
+
+  const mapRef = useRef<any>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  const addrList = useMemo<string[]>(
+    () => (Array.isArray(addresses) ? addresses : []),
+    [addresses]
+  );
+
   const [geoPoints, setGeoPoints] = useState<LatLng[]>([]);
   const [addrCenter, setAddrCenter] = useState<LatLng | null>(null);
 
@@ -125,6 +149,7 @@ const DetailMap: React.FC<DetailMapProps> = ({
       setGeoPoints((prev) => (prev.length ? [] : prev));
       return;
     }
+    if (!window.kakao?.maps?.services) return; // SDK 아직이면 다음 렌더에서 자동 재시도
 
     const geocoder = new window.google.maps.Geocoder();
     Promise.all(addrList.map(addr => geocodeToLatLng(geocoder, addr)))
@@ -141,13 +166,13 @@ const DetailMap: React.FC<DetailMapProps> = ({
 
   /** 4) 중심 주소 → 좌표 (centerCoord/coords 없을 때만) */
   useEffect(() => {
-    if (!ready) return;
     if (centerCoord || (Array.isArray(coords) && coords.length > 0)) {
       if (addrCenter !== null) setAddrCenter(null);
       return;
     }
 
     const useAddr = (centerAddress || addrList[0] || "").trim();
+    if (!useAddr) {
     if (!useAddr) {
       if (addrCenter !== null) setAddrCenter(null);
       return;
@@ -246,9 +271,15 @@ const DetailMap: React.FC<DetailMapProps> = ({
     (mapRef.current as any).setCenter(center);
   }, [ready, center]);
 
-  if (!ready) {
-    return <div ref={containerRef} style={{ width: "100%", height: "100%", background: "#e6e6e6" }} />;
-  }
+  // 🔑 환경변수 누락 시 안내 (개발 중 디버깅용)
+  useEffect(() => {
+    if (!process.env.REACT_APP_KAKAO_JS_KEY) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        "[DetailMap] REACT_APP_KAKAO_JS_KEY 가 비어있습니다. .env를 확인하세요."
+      );
+    }
+  }, []);
 
   return (
     <div ref={containerRef} style={{ width: "100%", height: "100%" }} />
