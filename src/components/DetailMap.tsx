@@ -77,7 +77,7 @@ async function loadGoogleMaps(): Promise<void> {
   return window.__GMAPS_LOADING__;
 }
 
-const DEFAULT_CENTER: LatLng = { lat: 37.5665, lng: 126.978 }; // 서울시청 근처
+const DEFAULT_CENTER: LatLng = { lat: 37.5010, lng: 126.8820 }; // 동양미래대학교 근처
 
 const DetailMap: React.FC<DetailMapProps> = ({
   addresses,
