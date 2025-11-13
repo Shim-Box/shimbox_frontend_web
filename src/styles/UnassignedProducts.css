@@ -64,13 +64,14 @@
   background: #f3f4f6;
 }
 
-/* 배정/선택 버튼 그룹 */
+/* 배정 버튼 그룹 */
 .assign-group {
   display: flex;
   gap: 8px;
   margin-left: 8px;
 }
 
+/* (현재는 assign-secondary만 사용) */
 .assign-primary,
 .assign-secondary,
 .assign-tertiary {
@@ -82,31 +83,7 @@
   border: 1px solid transparent;
 }
 
-/* 전체 선택 버튼: 검정 배경 + 흰 글씨 */
-.assign-tertiary {
-  background: #111827;
-  color: #ffffff;
-  border: 1px solid #111827;
-}
-.assign-tertiary:hover:not(:disabled) {
-  filter: brightness(0.95);
-}
-.assign-tertiary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-/* 선택 배정 */
-.assign-primary {
-  background: #10b981;
-  color: #fff;
-}
-.assign-primary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-/* 전체 물류 배정 */
+/* 전체 물류 배정 버튼 */
 .assign-secondary {
   background: #2563eb;
   color: #fff;
@@ -153,11 +130,6 @@
   font-weight: 600;
 }
 
-.unassigned-table input[type="checkbox"] {
-  width: 16px;
-  height: 16px;
-}
-
 .empty {
   background: #fff;
   border-radius: 8px;
@@ -198,25 +170,4 @@
 .pagination button:disabled {
   opacity: 0.4;
   cursor: not-allowed;
-}
-
-/* ------------ 사라지는 애니메이션 (한 줄씩, 순차) ------------ */
-.unassigned-table tbody tr.leaving {
-  animation: rowSlideFadeOut 0.45s ease forwards;
-  will-change: transform, opacity;
-}
-
-@keyframes rowSlideFadeOut {
-  0% {
-    opacity: 1;
-    transform: translateX(0);
-  }
-  100% {
-    opacity: 0;
-    transform: translateX(60%);
-  }
-}
-
-.unassigned-table tbody tr.leaving * {
-  pointer-events: none;
 }

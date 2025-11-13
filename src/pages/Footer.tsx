@@ -28,7 +28,7 @@ const Footer: React.FC<FooterProps> = ({
   const inputRef = useRef<HTMLInputElement>(null);
 
   const navigate = useNavigate();
-  const { setToken } = useContext(AuthContext);
+  const { isLoggedIn, setToken } = useContext(AuthContext);
 
   // 시계
   const [now, setNow] = useState<Date>(new Date());
@@ -61,10 +61,7 @@ const Footer: React.FC<FooterProps> = ({
         return;
       }
       if (/[구군시동면읍]$/.test(t) || t.length >= 2) {
-        if (
-          /^(?:[가-힣]{2,4}|[A-Za-z]+)$/.test(t) &&
-          !/구$|군$|시$|동$|면$|읍$/.test(t)
-        ) {
+        if (/^(?:[가-힣]{2,4}|[A-Za-z]+)$/.test(t) && !/구$|군$|시$|동$|면$|읍$/.test(t)) {
           nameParts.push(t);
         } else {
           filters.residence = t;
@@ -87,27 +84,26 @@ const Footer: React.FC<FooterProps> = ({
     const yyyy = now.getFullYear();
     const m = String(now.getMonth() + 1).padStart(2, "0");
     const dd = String(now.getDate()).padStart(2, "0");
-    const weekday = now
-      .toLocaleDateString("ko-KR", { weekday: "short" })
-      .replace(".", "");
+    const weekday = now.toLocaleDateString("ko-KR", { weekday: "short" }).replace(".", "");
 
-    return {
-      timeStr: `${period} ${h12}:${mm}`,
-      dateStr: `${yyyy}-${m}-${dd} (${weekday})`,
-    };
+    return { timeStr: `${period} ${h12}:${mm}`, dateStr: `${yyyy}-${m}-${dd} (${weekday})` };
   }, [now]);
 
-  // 로그아웃
-  const handleLogout = () => {
-    try {
-      localStorage.removeItem("accessToken");
-      sessionStorage.removeItem("accessToken");
-      sessionStorage.removeItem("refreshToken");
+  // 로그인/로그아웃 토글
+  const handleAuth = () => {
+    if (isLoggedIn) {
+      try {
+        sessionStorage.removeItem("accessToken");
+        sessionStorage.removeItem("refreshToken");
+        localStorage.removeItem("accessToken");
+        localStorage.removeItem("monitorToken");
+        sessionStorage.removeItem("monitorToken");
+      } catch {}
       setToken?.(null);
-      navigate("/login", { replace: true });
-    } catch (e) {
-      console.error("로그아웃 중 오류:", e);
-      navigate("/login", { replace: true });
+      alert("로그아웃이 완료되었습니다.");
+      navigate("/", { replace: true }); // 메인으로
+    } else {
+      navigate("/login");
     }
   };
 
@@ -121,29 +117,9 @@ const Footer: React.FC<FooterProps> = ({
           title="검색"
           type="button"
         >
-          <svg
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            fill="none"
-            aria-hidden="true"
-          >
-            <circle
-              cx="11"
-              cy="11"
-              r="7"
-              stroke="currentColor"
-              strokeWidth="2"
-            ></circle>
-            <line
-              x1="16.65"
-              y1="16.65"
-              x2="21"
-              y2="21"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-            ></line>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <circle cx="11" cy="11" r="7" stroke="currentColor" strokeWidth="2" />
+            <line x1="16.65" y1="16.65" x2="21" y2="21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
           </svg>
         </button>
 
@@ -161,13 +137,9 @@ const Footer: React.FC<FooterProps> = ({
       </div>
 
       <div className="footer-right">
-        <button
-          className="logout-btn"
-          onClick={handleLogout}
-          title="로그아웃"
-          type="button"
-        >
-          로그아웃
+        {/* ✅ isLoggedIn에 따라 텍스트/동작이 바뀜 */}
+        <button className="logout-btn" onClick={handleAuth} type="button">
+          {isLoggedIn ? "로그아웃" : "로그인"}
         </button>
 
         <div className="clock-box" role="timer" aria-live="polite">

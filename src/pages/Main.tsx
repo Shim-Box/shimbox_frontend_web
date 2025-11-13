@@ -1,5 +1,4 @@
-// src/pages/Main.tsx
-import React, { useEffect, useMemo, useState, useContext, useRef } from "react";
+import React, { useEffect, useMemo, useState, useContext, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "../pages/Sidebar";
 import "../styles/Main.css";
@@ -8,10 +7,10 @@ import { ApiService, RealtimeLocationItem } from "../services/apiService";
 import { ApprovedUser, DeliveryItem, RealtimeHealthItem } from "../models/AdminModels";
 import { AuthContext } from "../context/AuthContext";
 import Footer, { FooterFilters } from "../pages/Footer";
-import { connectLocationWS, LocationPayload, HealthPayload } from "../services/wsClient";
+import { connectLocationWS, LocationPayload, HealthPayload, sanitizeRegion } from "../services/wsClient";
 
 type DangerMode = "status" | "dangerOnly" | "id";
-type StatusKey = "위험" | "불안" | "좋음" | "알수없음";
+type StatusKey = "위험" | "좋음" | "알수없음";
 type LatLng = { lat: number; lng: number };
 
 function summarizeProducts(items: DeliveryItem[]) {
@@ -36,27 +35,25 @@ interface MiniDriverCard {
 }
 
 type WorkingCard = MiniDriverCard & {
-  effectiveLevel: StatusKey | "경고";
-  classKey: "good" | "warn" | "danger";
+  effectiveLevel: StatusKey;
+  classKey: "good" | "danger";
   heartRate?: number;
   step?: number;
+  _flags?: { isFatigue?: boolean; isFall?: boolean };
 };
 
 const toStatusKey = (s?: string): StatusKey =>
-  s === "위험" || s === "불안" || s === "좋음" ? s : "알수없음";
+  s === "위험" || s === "좋음" ? s : "알수없음";
 
-const statusClassOf = (status: StatusKey | "경고") =>
-  status === "위험" ? "danger" : status === "불안" || status === "경고" ? "warn" : "good";
+const statusClassOf = (status: StatusKey) => (status === "위험" ? "danger" : "good");
 
-const PALETTE: Record<"good" | "warn" | "danger", string> = {
+const PALETTE: Record<"good" | "danger", string> = {
   good: "#61D5AB",
-  warn: "#FFC069",
   danger: "#EE404C",
 };
 
-const MARKER_IMG: Record<"good" | "warn" | "danger", string> = {
+const MARKER_IMG: Record<"good" | "danger", string> = {
   good: "/images/driverMarker.png",
-  warn: "/images/driverMarker.png",
   danger: "/images/dangerMarker.png",
 };
 
@@ -64,6 +61,8 @@ const SEOUL_GU = [
   "구로구","양천구","강서구","영등포구","금천구","동작구",
   "성북구","강북구","동대문구","성동구","종로구","중구",
 ];
+
+const genId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 const Main: React.FC = () => {
   const { token } = useContext(AuthContext);
@@ -88,33 +87,52 @@ const Main: React.FC = () => {
   // 애니메이션 동기화 epoch
   const dangerEpochRef = useRef<number | null>(null);
 
-  // ✅ 지도 표시의 단일 소스: wsLoc (WS + 서버 스냅샷으로 시드)
-  // ★ ADDED: 초기값을 sessionStorage에서 복원 → 새로고침/재진입 시 즉시 표시
-  const [wsLoc, setWsLoc] = useState<Record<string, { pos: LatLng; ts: number; driverId?: number; userId?: string }>>(() => {
-    try {
-      const raw = sessionStorage.getItem("wsLocCache");
-      if (raw) return JSON.parse(raw);
-    } catch {}
-    return {};
-  });
+  // 지도 위치 캐시
+  const [wsLoc, setWsLoc] = useState<Record<string, { pos: LatLng; ts: number; driverId?: number; userId?: string }>>({});
 
-  // 건강 상태
+  // 건강 상태 + 플래그(피로/낙상)
   const [healthMap, setHealthMap] = useState<
-    Record<string, { level: "좋음" | "경고" | "위험" | "알수없음"; heartRate?: number; step?: number; capturedAt?: string }>
+    Record<string, {
+      level: "위험" | "좋음" | "알수없음";
+      heartRate?: number;
+      step?: number;
+      capturedAt?: string;
+      isFallDetected?: boolean;
+      isFatigueDanger?: boolean;
+    }>
   >({});
 
   const [pulseSet, setPulseSet] = useState<Set<number>>(new Set());
   const pulseTimer = useRef<number | null>(null);
 
-  const onDutyForMap = useMemo(
-    () => miniList.filter((m) => (m.attendance ?? "").trim() === "출근"),
-    [miniList]
-  );
+  // 시연용 토스트
+  type EventToast = {
+    id: string;
+    kind: "fatigue" | "fall";
+    userId: string;
+    driverId?: number;
+    name?: string;
+    at: number;
+  };
+  const [toasts, setToasts] = useState<EventToast[]>([]);
+  const toastTimerRef = useRef<number | null>(null);
+  const TOAST_MS = 1800;
 
-  const regionDrivers = useMemo(
-    () => (!selGu ? onDutyForMap : onDutyForMap.filter((m) => (m.residence || "").includes(selGu))),
-    [onDutyForMap, selGu]
-  );
+  const pushToast = useCallback((t: EventToast) => setToasts((q) => [...q, t]), []);
+
+  useEffect(() => {
+    if (toasts.length === 0 || toastTimerRef.current) return;
+    toastTimerRef.current = window.setTimeout(() => {
+      setToasts((q) => q.slice(1));
+      toastTimerRef.current = null;
+    }, TOAST_MS) as unknown as number;
+    return () => {
+      if (toastTimerRef.current) {
+        window.clearTimeout(toastTimerRef.current);
+        toastTimerRef.current = null;
+      }
+    };
+  }, [toasts]);
 
   const mapLevel = selGu ? 5 : 7;
 
@@ -123,18 +141,34 @@ const Main: React.FC = () => {
     [miniList]
   );
 
+  // healthMap 기반 병합
   const mergedWorking = useMemo<WorkingCard[]>(() => {
     return workingList.map((m) => {
       const live = healthMap[m.userId];
-      const effectiveLevel: StatusKey | "경고" = (live?.level as any) || m.status || "알수없음";
-      const classKey = statusClassOf(effectiveLevel) as "good" | "warn" | "danger";
-      return { ...m, effectiveLevel, classKey, heartRate: live?.heartRate, step: live?.step };
+      const isFall = !!live?.isFallDetected;
+      const isFatigue = !!live?.isFatigueDanger;
+      const forcedDanger = isFall || isFatigue;
+
+      const baseLevel: StatusKey =
+        forcedDanger ? "위험" : (live?.level ?? m.status ?? "알수없음");
+
+      return {
+        ...m,
+        effectiveLevel: baseLevel,
+        classKey: statusClassOf(baseLevel),
+        heartRate: live?.heartRate,
+        step: live?.step,
+        _flags: { isFall, isFatigue },
+      };
     });
   }, [workingList, healthMap]);
 
   const dangerCards = useMemo(() => mergedWorking.filter((m) => m.effectiveLevel === "위험"), [mergedWorking]);
   const dangerCount = dangerCards.length;
   const hasDanger = dangerCount > 0;
+
+  const fallCount = useMemo(() => mergedWorking.filter(m => m._flags?.isFall).length, [mergedWorking]);
+  const hasFall = fallCount > 0;
 
   const shownList = useMemo(() => {
     let base = [...mergedWorking];
@@ -144,7 +178,7 @@ const Main: React.FC = () => {
     } else if (dangerMode === "id") {
       base.sort((a, b) => a.driverId - b.driverId);
     } else {
-      const order = (lv: StatusKey | "경고") => (lv === "위험" ? 0 : lv === "불안" || lv === "경고" ? 1 : lv === "좋음" ? 2 : 3);
+      const order = (lv: StatusKey) => (lv === "위험" ? 0 : lv === "좋음" ? 1 : 2);
       base.sort((a, b) => {
         const sa = order(a.effectiveLevel); const sb = order(b.effectiveLevel);
         return sa !== sb ? sa - sb : a.name.localeCompare(b.name, "ko");
@@ -220,17 +254,23 @@ const Main: React.FC = () => {
     return () => { alive = false; };
   }, [token]);
 
-  // ✅ “현재 위치(서버가 저장해 둔 최신값)” 스냅샷으로 지도 즉시 시드
+  // userId -> driverId 매핑
+  const userToDriverId = useMemo(
+    () => Object.fromEntries(miniList.map((m) => [m.userId, m.driverId] as const)),
+    [miniList]
+  );
+
+  // 위치 스냅샷 시드
   useEffect(() => {
     if (!token) return;
     let alive = true;
 
     (async () => {
       try {
-        const rows: RealtimeLocationItem[] = await ApiService.fetchRealtimeLocations(selGu || undefined);
+        const regionGu = sanitizeRegion(selGu || undefined);
+        const rows: RealtimeLocationItem[] = await ApiService.fetchRealtimeLocations(regionGu);
         if (!alive || !Array.isArray(rows)) return;
 
-        // 서버에서 내려주는 timestamp가 있으면 사용, 없으면 now
         const now = Date.now();
         const seeded: Record<string, { pos: LatLng; ts: number; driverId?: number; userId?: string }> = {};
         for (const r of rows) {
@@ -250,7 +290,6 @@ const Main: React.FC = () => {
           };
         }
 
-        // 기존 wsLoc과 병합하되, 더 “새로운 ts”만 반영 (WS가 이미 최신이면 유지)
         setWsLoc((prev) => {
           const next = { ...prev };
           for (const [k, v] of Object.entries(seeded)) {
@@ -258,21 +297,13 @@ const Main: React.FC = () => {
           }
           return next;
         });
-      } catch {
-        // 스냅샷 실패시 무시 (WS가 오면 표시됨)
-      }
+      } catch {}
     })();
 
     return () => { alive = false; };
   }, [token, selGu]);
 
-  // userId -> driverId 매핑
-  const userToDriverId = useMemo(
-    () => Object.fromEntries(miniList.map((m) => [m.userId, m.driverId] as const)),
-    [miniList]
-  );
-
-  // WS — 위치 & 건강 (스냅샷 이후 들어오는 값으로 계속 최신화)
+  // WS — 위치 & 건강
   useEffect(() => {
     if (!token) return;
 
@@ -280,41 +311,46 @@ const Main: React.FC = () => {
       as: "web",
       region: selGu || undefined,
       handlers: {
-        onLocation: (msg: { type: "location"; payload: LocationPayload }) => {
-          const p = msg.payload;
+        onLocation: ({ payload: p }: { type: "location"; payload: LocationPayload }) => {
           if (typeof p?.lat !== "number" || typeof p?.lng !== "number") return;
 
+          // 서버 신뢰 + 최소 보정(userId 숫자 → driverId)
           let did: number | undefined =
-            typeof p?.driverId === "number" ? p.driverId :
-            (p?.userId != null ? userToDriverId[String(p.userId)] : undefined);
+            typeof p?.driverId === "number" ? p.driverId
+            : (p?.userId != null ? Number(p.userId) : undefined);
 
-          const key = did != null ? String(did) : `${p.lat.toFixed(5)},${p.lng.toFixed(5)}`;
-
-          setWsLoc((prev) => {
-            const current = prev[key];
-            const ts = Date.now();
-            // WS는 항상 최신으로 간주
-            return {
-              ...prev,
-              [key]: {
-                pos: { lat: p.lat!, lng: p.lng! },
-                ts,
-                driverId: did,
-                userId: p?.userId ? String(p.userId) : undefined,
-              },
-            };
-          });
-        },
-        onHealth: (msg: { type: "health"; payload: HealthPayload }) => {
-          const p = msg.payload as any;
-          const kUser = p?.userId != null ? String(p.userId) : undefined;
-          const kDriver = p?.driverId != null ? String(p.driverId) : undefined;
-          let userKey = kUser;
-          if (!userKey && kDriver) {
-            const found = miniList.find((m) => String(m.driverId) === kDriver);
-            if (found) userKey = found.userId;
+          // miniList 매핑이 있으면 우선
+          if (p?.userId != null) {
+            const mapped = userToDriverId[String(p.userId)];
+            if (mapped != null) did = mapped;
           }
+
+          const key = did != null ? String(did) : (p?.userId != null ? `u:${String(p.userId)}` : `${p.lat},${p.lng}`);
+
+          setWsLoc((prev) => ({
+            ...prev,
+            [key]: {
+              pos: { lat: p.lat!, lng: p.lng! },
+              ts: Date.now(),
+              driverId: did,
+              userId: p?.userId ? String(p.userId) : undefined,
+            },
+          }));
+        },
+        onHealth: ({ payload: p }: { type: "health"; payload: HealthPayload }) => {
+          // 서버 신뢰 + 최소 보정(userId 숫자 → driverId)
+          let userKey = p?.userId != null ? String(p.userId) : undefined;
           if (!userKey) return;
+
+          let drvId: number | undefined =
+            typeof p?.driverId === "number" ? p.driverId
+            : (Number.isFinite(Number(userKey)) ? Number(userKey) : undefined);
+
+          // 매핑 우선
+          if (!drvId) {
+            const mapped = userToDriverId[userKey];
+            if (mapped != null) drvId = mapped;
+          }
 
           setHealthMap((prev) => {
             const prevRow = prev[userKey!];
@@ -323,22 +359,42 @@ const Main: React.FC = () => {
             const newTs = newCaptured ? Date.parse(newCaptured) : Date.now();
             if (prevTs !== -1 && newTs < prevTs) return prev;
 
-            const serverLevel: string | undefined = p.level;
-            const nextLevel: "좋음" | "경고" | "위험" | "알수없음" =
-              serverLevel === "위험" ? "위험" : serverLevel === "경고" ? "경고" : serverLevel === "좋음" ? "좋음" : "알수없음";
+            // 플래그
+            const nextFall = typeof p.isFallDetected === "boolean" ? p.isFallDetected : (prevRow?.isFallDetected ?? false);
+            const rawScore: number | undefined =
+              typeof p.fatigueScore === "number" ? p.fatigueScore
+              : (typeof p.score === "number" ? p.score : undefined);
+            const nextFatigue = rawScore != null ? rawScore >= 0.7 : (prevRow?.isFatigueDanger ?? false);
 
+            const serverLevel: string | undefined = p.level;
+            const nextLevel: StatusKey =
+              (nextFall || nextFatigue) ? "위험"
+              : serverLevel === "위험" ? "위험"
+              : serverLevel === "좋음" ? "좋음"
+              : "알수없음";
+
+            // 승격 펄스
             if (prevRow) {
-              const rank = (lv: string) => (lv === "위험" ? 2 : lv === "경고" || lv === "불안" ? 1 : lv === "좋음" ? 0 : -1);
-              if (rank(nextLevel) > rank(prevRow.level)) {
-                setPulseSet((old) => {
-                  const ns = new Set(old);
-                  const found = miniList.find((m) => m.userId === userKey);
-                  if (found) ns.add(found.driverId);
-                  return ns;
-                });
+              const rank = (lv: StatusKey) => (lv === "위험" ? 2 : lv === "좋음" ? 1 : 0);
+              if (rank(nextLevel) > rank(prevRow.level) && drvId !== undefined) {
+                setPulseSet((old) => new Set(old).add(drvId!));
                 if (pulseTimer.current) window.clearTimeout(pulseTimer.current);
                 pulseTimer.current = window.setTimeout(() => setPulseSet(new Set()), 200);
               }
+            }
+
+            // 토스트 (상태 상승 시)
+            if (!prevRow?.isFatigueDanger && nextFatigue) {
+              const drv = miniList.find((x) => x.userId === userKey!);
+              const name = drv?.name;
+              const at = newTs;
+              pushToast({ id: `fatigue-${userKey}-${at}-${genId()}`, kind: "fatigue", userId: userKey!, driverId: drv?.driverId ?? drvId, name, at });
+            }
+            if (!prevRow?.isFallDetected && nextFall) {
+              const drv = miniList.find((x) => x.userId === userKey!);
+              const name = drv?.name;
+              const at = newTs;
+              pushToast({ id: `fall-${userKey}-${at}-${genId()}`, kind: "fall", userId: userKey!, driverId: drv?.driverId ?? drvId, name, at });
             }
 
             return {
@@ -348,6 +404,8 @@ const Main: React.FC = () => {
                 heartRate: typeof p.heartRate === "number" ? p.heartRate : prevRow?.heartRate,
                 step: typeof p.step === "number" ? p.step : prevRow?.step,
                 capturedAt: newCaptured || prevRow?.capturedAt,
+                isFallDetected: nextFall,
+                isFatigueDanger: nextFatigue,
               },
             };
           });
@@ -365,7 +423,7 @@ const Main: React.FC = () => {
         pulseTimer.current = null;
       }
     };
-  }, [token, miniList, selGu, userToDriverId]);
+  }, [token, miniList, selGu, userToDriverId, pushToast]);
 
   // 오래된 WS 좌표 정리
   useEffect(() => {
@@ -383,14 +441,15 @@ const Main: React.FC = () => {
     return () => window.clearInterval(id);
   }, []);
 
-  // 건강 스냅샷 폴링
+  // 건강 스냅샷 폴링 (스냅샷은 낙상 플래그가 없을 수 있으니 기존값 유지)
   useEffect(() => {
     if (!token) return;
     let alive = true;
 
     const tick = async () => {
       try {
-        const rows: RealtimeHealthItem[] = await ApiService.fetchRealtimeHealth(selGu || undefined);
+        const regionGu = sanitizeRegion(selGu || undefined);
+        const rows: RealtimeHealthItem[] = await ApiService.fetchRealtimeHealth(regionGu);
         if (!alive || !Array.isArray(rows)) return;
         setHealthMap((prev) => {
           const next = { ...prev };
@@ -401,12 +460,16 @@ const Main: React.FC = () => {
             const newTs = r.capturedAt ? Date.parse(r.capturedAt) : Date.now();
             if (prevTs !== -1 && newTs < prevTs) continue;
 
-            const level = r.level === "위험" ? "위험" : r.level === "경고" ? "경고" : r.level === "좋음" ? "좋음" : "알수없음";
+            let level: StatusKey =
+              r.level === "위험" ? "위험" : r.level === "좋음" ? "좋음" : "알수없음";
+
             next[userKey] = {
               level,
               heartRate: r.heartRate ?? prevRow?.heartRate,
               step: r.step ?? prevRow?.step,
               capturedAt: r.capturedAt ?? prevRow?.capturedAt,
+              isFallDetected: prevRow?.isFallDetected,
+              isFatigueDanger: prevRow?.isFatigueDanger,
             };
           }
           return next;
@@ -419,31 +482,30 @@ const Main: React.FC = () => {
     return () => { alive = false; window.clearInterval(id); };
   }, [token, selGu]);
 
-  // ★ ADDED: wsLoc 변경 시 캐시 → 다음 진입/새로고침에 즉시 반영
-  useEffect(() => {
-    try {
-      sessionStorage.setItem("wsLocCache", JSON.stringify(wsLoc));
-    } catch {}
-  }, [wsLoc]);
-
-  // 지도 마커 (wsLoc만 사용)
-  type Marker = { pos: LatLng; color: "good" | "warn" | "danger" };
+  // 지도 마커
+  type Marker = { pos: LatLng; color: "good" | "danger" };
   const markers: Marker[] = useMemo(() => {
-    const levelToColor = (lv?: StatusKey | "경고") =>
-      lv === "위험" ? "danger" : lv === "불안" || lv === "경고" ? "warn" : "good";
-
     const list: Marker[] = [];
-    for (const [k, v] of Object.entries(wsLoc)) {
-      let color: "good" | "warn" | "danger" = "good";
-      const maybeId = Number(k);
-      if (!Number.isNaN(maybeId)) {
-        const card = mergedWorking.find((m) => m.driverId === maybeId);
-        color = levelToColor(card?.effectiveLevel);
+    for (const v of Object.values(wsLoc)) {
+      let did = v.driverId;
+      if (did == null && v.userId) {
+        const n = Number(v.userId);
+        if (Number.isFinite(n)) did = n;
+      }
+      if (did == null && v.userId) {
+        const mapped = userToDriverId[v.userId];
+        if (mapped != null) did = mapped;
+      }
+
+      let color: "good" | "danger" = "good";
+      if (did != null) {
+        const card = mergedWorking.find((m) => m.driverId === did);
+        if (card?.effectiveLevel === "위험") color = "danger";
       }
       list.push({ pos: v.pos, color });
     }
     return list;
-  }, [wsLoc, mergedWorking]);
+  }, [wsLoc, mergedWorking, userToDriverId]);
 
   const markerCoords = useMemo<LatLng[]>(() => markers.map((m) => m.pos), [markers]);
   const markerImages = useMemo<string[]>(() => markers.map((m) => MARKER_IMG[m.color]), [markers]);
@@ -486,8 +548,9 @@ const Main: React.FC = () => {
             <br /><strong>{loadingStats ? "…" : totalCompleted.toLocaleString()}건</strong>
           </div>
 
+          {/* 배너: 기본은 빨강. 낙상 감지 시 파랑 */}
           <div
-            className={`stat-card warning ${hasDanger ? "is-blinking" : ""}`}
+            className={`stat-card warning ${hasFall ? "is-blue-blink" : hasDanger ? "is-blinking" : ""}`}
             role={hasDanger ? "alert" : "button"}
             aria-live={hasDanger ? "assertive" : undefined}
             tabIndex={0}
@@ -495,16 +558,25 @@ const Main: React.FC = () => {
             aria-pressed={dangerMode !== "status"}
           >
             <div className="danger-panel-content">
-              <div className="danger-headline">
-                {hasDanger ? `⚠️ 위험 상태인 택배기사가 ${dangerCount}명 있습니다` : "⚠️ 현재는 위험 상태인 택배기사가 없습니다"}
+              <div className={`danger-headline ${hasFall ? "blue" : ""}`}>
+                {hasFall
+                  ? `💙 낙상 위험 감지: ${fallCount}명`
+                  : hasDanger
+                  ? `⚠️ 위험 상태인 택배기사가 ${dangerCount}명 있습니다`
+                  : "⚠️ 현재는 위험 상태인 택배기사가 없습니다"}
               </div>
+              {hasFall && (
+                <div className="danger-subline">
+                  ⚠️ 위험 상태(피로/기타) 기사 수: {dangerCount}명
+                </div>
+              )}
             </div>
           </div>
         </div>
 
-        {/* 지도 + 우측 목록 */}
+        {/* 본문: 지도 + 우측 목록 */}
         <div className="main-body">
-          <div className={`map-area ${hasDanger ? "danger-boost" : ""}`}>
+          <div className={`map-area ${hasDanger ? (hasFall ? "blue-boost" : "danger-boost") : ""}`}>
             <DetailMap
               addresses={[]}
               centerAddress=""
@@ -523,7 +595,7 @@ const Main: React.FC = () => {
                 const ratio = m.total > 0 ? Math.min(100, Math.round((m.delivered / m.total) * 100)) : 0;
                 const color = PALETTE[m.classKey];
                 const pulse = pulseSet.has(m.driverId) ? " pulse" : "";
-                const dangerBoost = m.effectiveLevel === "위험" ? " danger-boost" : "";
+                const dangerBoost = m.effectiveLevel === "위험" ? (m._flags?.isFall ? " blue-boost" : " danger-boost") : "";
                 return (
                   <div
                     key={m.driverId}
@@ -561,8 +633,10 @@ const Main: React.FC = () => {
                         <div className="mini-name">
                           {m.name} <span className="mini-dot" style={{ color }}>●</span>{" "}
                           <span className="mini-status" style={{ color }}>
-                            {m.effectiveLevel === "경고" ? "불안" : m.effectiveLevel}
+                            {m.effectiveLevel}
                           </span>
+                          {m._flags?.isFall && <span className="mini-badge-fall">낙상</span>}
+                          {m._flags?.isFatigue && <span className="mini-badge-fatigue">피로</span>}
                         </div>
                         <div className="mini-sub">{m.residence}</div>
                       </div>
@@ -587,6 +661,21 @@ const Main: React.FC = () => {
         </div>
       </main>
 
+      {/* 시연용 이벤트 토스트 */}
+      <div className="event-toast-wrap">
+        {toasts.slice(0, 1).map((t) => {
+          const drv = miniList.find((m) => m.userId === t.userId);
+          const name = t.name ?? drv?.name ?? "";
+          const label = t.kind === "fall" ? `💙 낙상 위험 감지` : `🚨 피로도 위험`;
+          return (
+            <div key={t.id} className={`event-toast ${t.kind}`}>
+              <strong>{name}</strong>
+              <span>{label}</span>
+            </div>
+          );
+        })}
+      </div>
+
       {/* 지역 선택 모달 */}
       {regionOpen && (
         <div className="rf-backdrop" role="dialog" aria-modal="true">
@@ -605,7 +694,7 @@ const Main: React.FC = () => {
         </div>
       )}
 
-      {/* ⚠️ 위험 알림 모달 */}
+      {/* 위험 알림 모달 */}
       {dangerModalOpen && (
         <div className="rf-backdrop danger-modal" role="alertdialog" aria-modal="true" aria-labelledby="danger-title">
           <div className="rf-modal" style={{ borderTop: "3px solid #EE404C" }}>

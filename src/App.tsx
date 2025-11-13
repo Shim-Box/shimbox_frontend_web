@@ -37,25 +37,23 @@ function App() {
       <NotificationsProvider>
         <BrowserRouter>
           <Routes>
-            {/* 공개 라우트 */}
-            <Route path="/" element={<Navigate to="/login" replace />} />
+            {/* ✅ 공개 라우트 */}
+            <Route path="/" element={<Main />} />            {/* 메인 공개 */}
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
 
-            {/* 보호 라우트 (로그인 필요) */}
+            {/* 레거시 호환: /main -> / 로 리다이렉트 */}
+            <Route path="/main" element={<Navigate to="/" replace />} />
+
+            {/* ✅ 보호 라우트 (로그인 필요) */}
             <Route element={<PrivateRoute />}>
-              <Route path="/main" element={<Main />} />
               <Route path="/manage" element={<Manage />} />
               <Route path="/driver/:id" element={<DriverDetail />} />
+              <Route path="/products/unassigned" element={<UnassignedProducts />} />
             </Route>
 
             {/* fallback */}
-            <Route path="*" element={<Navigate to="/login" replace />} />
-
-            <Route
-              path="/products/unassigned"
-              element={<UnassignedProducts />}
-            />
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </BrowserRouter>
       </NotificationsProvider>

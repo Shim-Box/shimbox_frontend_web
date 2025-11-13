@@ -1,4 +1,3 @@
-// src/services/apiService.ts
 import axios, { AxiosError, AxiosResponse, AxiosRequestHeaders } from "axios";
 import { BASE_URL } from "../env";
 import { ApiResponse } from "../models/ApiResponse";
@@ -22,24 +21,25 @@ const ACCESS_KEY = "accessToken";
 const REFRESH_KEY = "refreshToken";
 
 function getAccessToken() {
-  return (
-    localStorage.getItem(ACCESS_KEY) ||
-    sessionStorage.getItem(ACCESS_KEY) ||
-    undefined
-  );
+  // ✅ 세션스토리지만 사용: 창/탭 닫히면 자동 로그아웃
+  return sessionStorage.getItem(ACCESS_KEY) || undefined;
 }
 function getRefreshToken() {
   return sessionStorage.getItem(REFRESH_KEY) || undefined;
 }
 function setTokens(tokens: AuthTokens) {
-  if (tokens?.accessToken) localStorage.setItem(ACCESS_KEY, tokens.accessToken);
-  if (tokens?.refreshToken)
-    sessionStorage.setItem(REFRESH_KEY, tokens.refreshToken);
+  if (tokens?.accessToken) sessionStorage.setItem(ACCESS_KEY, tokens.accessToken);
+  if (tokens?.refreshToken) sessionStorage.setItem(REFRESH_KEY, tokens.refreshToken);
 }
 function clearTokens() {
-  localStorage.removeItem(ACCESS_KEY);
   sessionStorage.removeItem(ACCESS_KEY);
   sessionStorage.removeItem(REFRESH_KEY);
+  // 과거 잔존 키 방어 제거
+  try {
+    localStorage.removeItem(ACCESS_KEY);
+    localStorage.removeItem("monitorToken");
+    sessionStorage.removeItem("monitorToken");
+  } catch {}
 }
 
 /** ─────────── axios 기본 ─────────── */
@@ -53,7 +53,11 @@ function unwrap<T>(res: AxiosResponse<ApiResponse<T>>): T {
   throw new Error(res.data.message);
 }
 
-const isAuthApi = (url: string) => url.startsWith("api/v1/auth/");
+/** 인증 API 판별 (절대/상대 경로 모두 허용) */
+const isAuthApi = (url: string) => {
+  const u = (url || "").replace(/^\//, ""); // '/api/...' -> 'api/...'
+  return u.startsWith("api/v1/auth/");
+};
 
 client.interceptors.request.use((config) => {
   const url = config.url ?? "";
@@ -114,20 +118,45 @@ client.interceptors.response.use(
     const status = error.response?.status ?? 0;
     const url = original.url || "";
 
+    // 인증 API 자체는 인터셉터 건너뜀
     if (isAuthApi(url)) return Promise.reject(error);
 
+    // 401/403 이고 아직 재시도 안 했으면 → 리프레시 시도
     if ((status === 401 || status === 403) && !(original as any)._retry) {
       (original as any)._retry = true;
       try {
         const newAccess = await reissue();
-        if (!newAccess) return Promise.reject(error);
+        if (!newAccess) {
+          // 🔴 리프레시 실패 — "토큰이 있는 상태"에서만 로그인으로 리다이렉트
+          const hadToken = !!getAccessToken();
+          clearTokens();
+          if (hadToken && typeof window !== "undefined" && window.location.pathname !== "/login") {
+            window.location.assign("/login");
+          }
+          return Promise.reject(error);
+        }
         if (!original.headers) original.headers = new axios.AxiosHeaders();
-        (original.headers as AxiosRequestHeaders)["Authorization"] =
-          `Bearer ${newAccess}`;
+        (original.headers as AxiosRequestHeaders)["Authorization"] = `Bearer ${newAccess}`;
         return client(original);
       } catch {
+        // 🔴 리프레시 시도 중 예외 — 동일 가드
+        const hadToken = !!getAccessToken();
         clearTokens();
+        if (hadToken && typeof window !== "undefined" && window.location.pathname !== "/login") {
+          window.location.assign("/login");
+        }
         return Promise.reject(error);
+      }
+    }
+
+    // 그 외 401 — 게스트면 리다이렉트 안 함
+    if (status === 401) {
+      const hadToken = !!getAccessToken();
+      if (hadToken) {
+        clearTokens();
+        if (typeof window !== "undefined" && window.location.pathname !== "/login") {
+          window.location.assign("/login");
+        }
       }
     }
 
@@ -166,7 +195,7 @@ export const ApiService = {
       .post<ApiResponse<AuthTokens>>("api/v1/auth/login", data)
       .then(unwrap)
       .then((tokens) => {
-        setTokens(tokens);
+        setTokens(tokens); // ✅ 세션스토리지 저장
         return tokens;
       });
   },

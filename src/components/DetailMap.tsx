@@ -1,7 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Map as KakaoMap, MapMarker } from "react-kakao-maps-sdk";
 
-declare global { interface Window { kakao: any; } }
+declare global {
+  interface Window {
+    google?: any;
+    __GMAPS_LOADING__?: Promise<void>;
+  }
+}
 
 export interface LatLng { lat: number; lng: number; }
 
@@ -10,120 +14,158 @@ export interface DetailMapProps {
   coords?: LatLng[];
   centerCoord?: LatLng;
   centerAddress?: string;
-  /** 작을수록 더 확대됨 (기본 8) */
+  /** 숫자가 작을수록 더 확대 (카카오 level과 유사 의미, 기본 6) */
   level?: number;
   markerImageUrls?: string[];
   markerSize?: { width: number; height: number };
   onMarkerClick?: (idx: number) => void;
-  /** 여러 마커일 때 fitBounds 후 추가 확대/축소(음수면 확대). 기본 -1 */
+  /** 여러 마커일 때 fitBounds 후 추가 확대/축소(음수면 확대). 기본 -2 */
   fitBiasAfterBounds?: number;
 }
 
-const DEFAULT_CENTER: LatLng = { lat: 37.5665, lng: 126.978 };
+/** ─────────────────────────────────────────────────────────
+ *  🔑 Google Maps API Key 주입 규칙(우선순위)
+ *  1) import.meta.env.VITE_GOOGLE_MAPS_API_KEY (Vite)
+ *  2) process.env.GOOGLE_MAPS_API_KEY (CRA/Node)
+ *  3) window.__GMAPS_KEY (전역 주입)
+ *  4) 하드코딩(최후 수단): 아래 DEFAULT_FALLBACK_KEY
+ * 
+ *  👉 실제 배포에서는 (1)이나 (2) 사용 권장. 하드코딩 키는 삭제하세요!
+ * ───────────────────────────────────────────────────────── */
+const DEFAULT_FALLBACK_KEY = "AIzaSyDcaQDrzTPJQ1bT2feHqyyo-LA_ijEXHCs";
+
+function resolveApiKey(): string {
+  // @ts-ignore
+  const fromVite = typeof import.meta !== "undefined" ? (import.meta as any).env?.VITE_GOOGLE_MAPS_API_KEY : undefined;
+  const fromNode = typeof process !== "undefined" ? (process as any).env?.GOOGLE_MAPS_API_KEY : undefined;
+  const fromWin  = typeof window !== "undefined" ? (window as any).__GMAPS_KEY : undefined;
+  return fromVite || fromNode || fromWin || DEFAULT_FALLBACK_KEY;
+}
+
+/** Google Maps JS API 로더 (중복 로딩 방지) */
+async function loadGoogleMaps(): Promise<void> {
+  if (window.google?.maps) return;
+  if (window.__GMAPS_LOADING__) return window.__GMAPS_LOADING__;
+
+  const key = resolveApiKey();
+  window.__GMAPS_LOADING__ = new Promise<void>((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&libraries=places`;
+    s.async = true;
+    s.defer = true;
+    s.onload = () => resolve();
+    s.onerror = (e) => reject(e);
+    document.head.appendChild(s);
+  });
+
+  return window.__GMAPS_LOADING__;
+}
+
+const DEFAULT_CENTER: LatLng = { lat: 37.5665, lng: 126.978 }; // 서울시청 근처
 
 const DetailMap: React.FC<DetailMapProps> = ({
-  addresses, coords, centerCoord, centerAddress,
-  level = 6,                   // 기본 더 줌인
+  addresses,
+  coords,
+  centerCoord,
+  centerAddress,
+  level = 6,
   markerImageUrls,
   markerSize = { width: 35, height: 45 },
   onMarkerClick,
-  fitBiasAfterBounds = -2,     // 기본 더 줌인
+  fitBiasAfterBounds = -2,
 }) => {
   const [ready, setReady] = useState(false);
   const [geoPoints, setGeoPoints] = useState<LatLng[]>([]);
   const [addrCenter, setAddrCenter] = useState<LatLng | null>(null);
 
-  const mapRef = useRef<kakao.maps.Map | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const mapRef = useRef<any | null>(null);
+  const markersRef = useRef<any[]>([]);
 
-  const addrList = useMemo<string[]>(() => (Array.isArray(addresses) ? addresses : []), [addresses]);
+  const addrList = useMemo<string[]>(
+    () => (Array.isArray(addresses) ? addresses : []),
+    [addresses]
+  );
 
-  // ✅ Kakao SDK 늦게 로드돼도 자동 감지해서 ready 설정
+  /** 1) SDK 로드 */
   useEffect(() => {
-    if (window.kakao?.maps) setReady(true);
-    const wait = setInterval(() => {
-      if (window.kakao?.maps?.services) {
-        setReady(true);
-        clearInterval(wait);
-      }
-    }, 300);
-    return () => clearInterval(wait);
+    let canceled = false;
+    loadGoogleMaps()
+      .then(() => { if (!canceled) setReady(true); })
+      .catch(() => { /* fail silent */ });
+    return () => { canceled = true; };
   }, []);
 
+  /** 2) 맵 초기화 & ResizeObserver */
   useEffect(() => {
-    if (!containerRef.current) return;
-    const ro = new ResizeObserver(() => { if (mapRef.current) mapRef.current.relayout(); });
+    if (!ready || !containerRef.current || mapRef.current) return;
+
+    const gmaps = window.google.maps;
+    mapRef.current = new gmaps.Map(containerRef.current, {
+      center: DEFAULT_CENTER,
+      zoom: toGoogleZoom(level),
+      mapTypeControl: false,
+      streetViewControl: false,
+      fullscreenControl: false,
+    });
+
+    const ro = new ResizeObserver(() => {
+      if (mapRef.current) gmaps.event.trigger(mapRef.current, "resize");
+    });
     ro.observe(containerRef.current);
     return () => ro.disconnect();
-  }, []);
+  }, [ready, level]);
 
-  // 주소 → 좌표 (coords 없을 때만)
+  /** 3) 주소 → 좌표 (coords 비었을 때만) */
   useEffect(() => {
     if (!ready) return;
     if (Array.isArray(coords) && coords.length > 0) return;
-    if (!window.kakao?.maps?.services) return;
 
     if (addrList.length === 0) {
       setGeoPoints((prev) => (prev.length ? [] : prev));
       return;
     }
 
-    const geocoder = new window.kakao.maps.services.Geocoder();
-    Promise.all(
-      addrList.map(
-        (addr) =>
-          new Promise<LatLng>((resolve) => {
-            const q = String(addr || "").trim();
-            if (!q) return resolve(DEFAULT_CENTER);
-            geocoder.addressSearch(q, (res: any, status: any) => {
-              if (status === window.kakao.maps.services.Status.OK && res?.[0]) {
-                const { x, y } = res[0];
-                resolve({ lat: parseFloat(y), lng: parseFloat(x) });
-              } else {
-                resolve(DEFAULT_CENTER);
-              }
-            });
-          })
-      )
-    )
+    const geocoder = new window.google.maps.Geocoder();
+    Promise.all(addrList.map(addr => geocodeToLatLng(geocoder, addr)))
       .then((locs) => {
-        const same =
-          locs.length === geoPoints.length &&
-          locs.every((p, i) => p.lat === geoPoints[i]?.lat && p.lng === geoPoints[i]?.lng);
-        if (!same) setGeoPoints(locs);
+        setGeoPoints((prev) => {
+          const same =
+            locs.length === prev.length &&
+            locs.every((p, i) => p.lat === prev[i]?.lat && p.lng === prev[i]?.lng);
+          return same ? prev : locs;
+        });
       })
-      .catch(() => { if (geoPoints.length) setGeoPoints([]); });
-  }, [ready, addrList, coords, geoPoints.length]);
+      .catch(() => setGeoPoints([]));
+  }, [ready, addrList, coords]);
 
-  // 주소 중심 (centerCoord/coords 없을 때만)
+  /** 4) 중심 주소 → 좌표 (centerCoord/coords 없을 때만) */
   useEffect(() => {
     if (!ready) return;
     if (centerCoord || (Array.isArray(coords) && coords.length > 0)) {
       if (addrCenter !== null) setAddrCenter(null);
       return;
     }
+
     const useAddr = (centerAddress || addrList[0] || "").trim();
-    if (!useAddr || !window.kakao?.maps?.services) {
+    if (!useAddr) {
       if (addrCenter !== null) setAddrCenter(null);
       return;
     }
-    const geocoder = new window.kakao.maps.services.Geocoder();
-    geocoder.addressSearch(useAddr, (res: any, status: any) => {
-      if (status === window.kakao.maps.services.Status.OK && res?.[0]) {
-        const { x, y } = res[0];
-        const next = { lat: parseFloat(y), lng: parseFloat(x) };
-        if (addrCenter?.lat !== next.lat || addrCenter?.lng !== next.lng) setAddrCenter(next);
-      } else {
-        if (addrCenter !== null) setAddrCenter(null);
-      }
-    });
+
+    const geocoder = new window.google.maps.Geocoder();
+    geocodeToLatLng(geocoder, useAddr)
+      .then((pt) => setAddrCenter(pt))
+      .catch(() => setAddrCenter(null));
   }, [ready, centerCoord, coords, centerAddress, addrList, addrCenter]);
 
+  /** 5) 마커 소스 계산 */
   const markerPoints: LatLng[] = useMemo(() => {
     if (Array.isArray(coords) && coords.length > 0) return coords;
     return geoPoints;
   }, [coords, geoPoints]);
 
+  /** 6) 중심 계산 */
   const center: LatLng = useMemo(() => {
     if (centerCoord) return centerCoord;
     if (Array.isArray(coords) && coords.length > 0) return coords[0];
@@ -132,71 +174,109 @@ const DetailMap: React.FC<DetailMapProps> = ({
     return DEFAULT_CENTER;
   }, [centerCoord, coords, addrCenter, geoPoints]);
 
-  // 마커 변경 시 화면 맞춤 + 살짝 더 확대(bias)
+  /** 7) 마커 그리기 & bounds/zoom 조정 */
   useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
+    if (!ready || !mapRef.current) return;
 
-    if (markerPoints.length === 0) { map.relayout(); return; }
+    const gmaps = window.google.maps;
+    const map = mapRef.current as any;
 
-    if (markerPoints.length === 1) {
-      const p = markerPoints[0];
-      map.setCenter(new window.kakao.maps.LatLng(p.lat, p.lng));
-      // ✅ 단일 마커는 전달 level보다 더 확대
-      map.setLevel(Math.max(1, level - 2));
-      map.relayout();
+    // 기존 마커 제거
+    markersRef.current.forEach((m) => m.setMap(null));
+    markersRef.current = [];
+
+    // 마커 이미지 배열 보정
+    const resolvedMarkerImages: string[] = (() => {
+      if (!markerImageUrls || markerImageUrls.length === 0) return [];
+      if (markerImageUrls.length === markerPoints.length) return markerImageUrls;
+      if (markerImageUrls.length === 1) return Array(markerPoints.length).fill(markerImageUrls[0]);
+      return markerPoints.map((_p, i) => markerImageUrls[i] ?? markerImageUrls[markerImageUrls.length - 1]);
+    })();
+
+    // 마커 생성
+    markerPoints.forEach((p, idx) => {
+      const icon = resolvedMarkerImages[idx]
+        ? {
+            url: resolvedMarkerImages[idx],
+            scaledSize: new gmaps.Size(markerSize.width, markerSize.height),
+          }
+        : undefined;
+
+      const marker = new gmaps.Marker({
+        position: p,
+        map,
+        icon,
+      });
+
+      if (onMarkerClick) {
+        marker.addListener("click", () => onMarkerClick(idx));
+      }
+
+      markersRef.current.push(marker);
+    });
+
+    // 화면 맞춤/줌
+    if (markerPoints.length === 0) {
+      map.setCenter(center);
+      map.setZoom(toGoogleZoom(level));
       return;
     }
 
-    const bounds = new window.kakao.maps.LatLngBounds();
-    markerPoints.forEach((p) => bounds.extend(new window.kakao.maps.LatLng(p.lat, p.lng)));
-    map.setBounds(bounds);
-    if (fitBiasAfterBounds && fitBiasAfterBounds !== 0) {
-      const cur = map.getLevel();
-      const next = Math.max(1, cur + fitBiasAfterBounds);
-      if (next !== cur) map.setLevel(next);
+    if (markerPoints.length === 1) {
+      map.setCenter(markerPoints[0]);
+      // 카카오 level ↔ 구글 zoom 차이를 보정: level-2 만큼 더 확대
+      map.setZoom(toGoogleZoom(Math.max(1, level - 2)));
+      return;
     }
-    map.relayout();
-  }, [markerPoints, level, fitBiasAfterBounds]);
 
-  // 마커 이미지 배열 보정
-  const resolvedMarkerImages = useMemo(() => {
-    if (!markerImageUrls || markerImageUrls.length === 0) return [];
-    if (markerImageUrls.length === markerPoints.length) return markerImageUrls;
-    if (markerImageUrls.length === 1) return Array(markerPoints.length).fill(markerImageUrls[0]);
-    return markerPoints.map((_p, i) => markerImageUrls[i] ?? markerImageUrls[markerImageUrls.length - 1]);
-  }, [markerImageUrls, markerPoints.length]);
+    const bounds = new gmaps.LatLngBounds();
+    markerPoints.forEach((p) => bounds.extend(p));
+    map.fitBounds(bounds);
+
+    if (fitBiasAfterBounds && fitBiasAfterBounds !== 0) {
+      // fit 후 현재 줌에 바이어스 적용
+      const cur = map.getZoom();
+      map.setZoom(Math.max(1, cur - fitBiasAfterBounds)); // kakao level 감소=줌인 → google zoom 증가
+    }
+  }, [ready, markerPoints, center, level, markerImageUrls, markerSize, onMarkerClick, fitBiasAfterBounds]);
+
+  /** 8) 중심만 바뀌는 경우 */
+  useEffect(() => {
+    if (!ready || !mapRef.current) return;
+    (mapRef.current as any).setCenter(center);
+  }, [ready, center]);
 
   if (!ready) {
     return <div ref={containerRef} style={{ width: "100%", height: "100%", background: "#e6e6e6" }} />;
   }
 
   return (
-    <div ref={containerRef} style={{ width: "100%", height: "100%" }}>
-      <KakaoMap
-        center={center}
-        isPanto
-        level={level}
-        style={{ width: "100%", height: "100%" }}
-        onCreate={(map) => {
-          mapRef.current = map;
-          setTimeout(() => map.relayout(), 0);
-        }}
-      >
-        {markerPoints.map((c, idx) => {
-          const src = resolvedMarkerImages[idx];
-          return (
-            <MapMarker
-              key={`${c.lat},${c.lng},${idx}`}
-              position={c}
-              image={src ? { src, size: markerSize } : undefined}
-              onClick={() => onMarkerClick?.(idx)}
-            />
-          );
-        })}
-      </KakaoMap>
-    </div>
+    <div ref={containerRef} style={{ width: "100%", height: "100%" }} />
   );
 };
+
+/** 주소 → LatLng */
+async function geocodeToLatLng(geocoder: any, addr: string): Promise<LatLng> {
+  const q = String(addr || "").trim();
+  if (!q) return DEFAULT_CENTER;
+
+  return new Promise<LatLng>((resolve) => {
+    geocoder.geocode({ address: q }, (results: any, status: any) => {
+      if (status === "OK" && results?.[0]?.geometry?.location) {
+        const loc = results[0].geometry.location;
+        resolve({ lat: loc.lat(), lng: loc.lng() });
+      } else {
+        resolve(DEFAULT_CENTER);
+      }
+    });
+  });
+}
+
+/** 카카오의 level(작을수록 확대)을 구글 zoom(클수록 확대)처럼 보이게 단순 변환 */
+function toGoogleZoom(kakaoLevel: number): number {
+  // 대충 level 6 ≈ zoom 13 정도로 매핑. 필요한 경우 조정하세요.
+  const base = 19 - kakaoLevel; // 러프 변환
+  return Math.max(3, Math.min(18, base));
+}
 
 export default DetailMap;

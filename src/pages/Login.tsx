@@ -1,8 +1,8 @@
+// src/pages/Login.tsx
 import React, { useState, useContext, useEffect } from "react";
 import "../styles/Login.css";
 import { useNavigate } from "react-router-dom";
 import { ApiService } from "../services/apiService";
-import { SignupData } from "../models/SignupData";
 import { AuthContext } from "../context/AuthContext";
 
 const Login: React.FC = () => {
@@ -11,7 +11,7 @@ const Login: React.FC = () => {
 
   useEffect(() => {
     if (isLoggedIn) {
-      navigate("/main", { replace: true });
+      navigate("/", { replace: true });  // ✅ /main -> /
     }
   }, [isLoggedIn, navigate]);
 
@@ -24,15 +24,10 @@ const Login: React.FC = () => {
     setErrorMsg(null);
     setLoading(true);
     try {
-      // 회원가입용 클래스 대신, 로그인은 POJO로(email/password만) 보냄
       const tokens = await ApiService.login({ email: username, password });
-
-      // 컨텍스트 & 스토리지 저장
       setToken(tokens.accessToken);
-      localStorage.setItem("accessToken", tokens.accessToken);
       sessionStorage.setItem("refreshToken", tokens.refreshToken);
-
-      navigate("/main", { replace: true });
+      navigate("/", { replace: true });   // ✅ /main -> /
     } catch (err: any) {
       console.error(err);
       setErrorMsg("로그인에 실패했습니다. 이메일과 비밀번호를 확인하세요.");

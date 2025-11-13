@@ -1,9 +1,8 @@
-// src/services/wsClient.ts
 import { BASE_URL } from "../env";
 
 export type LocationPayload = {
   driverId?: number;
-  userId?: number | string; // 위치 메시지에도 userId 허용
+  userId?: number | string;
   driverName?: string;
   region?: string;
   lat?: number;
@@ -15,6 +14,7 @@ export type LocationPayload = {
 
 export type HealthPayload = {
   driverId?: number;
+  userId?: number | string;
   driverName?: string;
   region?: string;
   heartRate?: number;
@@ -22,8 +22,10 @@ export type HealthPayload = {
   recordedAt?: string;
   capturedAt?: string;
   timestamp?: number;
-  userId?: number | string;
   level?: "좋음" | "경고" | "위험" | string;
+  isFallDetected?: boolean;   // ★ 서버가 항상 포함
+  fatigueScore?: number;
+  score?: number;
 };
 
 export type WSMessage =
@@ -44,31 +46,22 @@ export interface ConnectOptions {
   onClose?: (ev: CloseEvent) => void;
   handlers?: ConnectHandlers;
   reconnect?: boolean;
-  maxRetries?: number;   // 기본 3
-  retryDelayMs?: number; // 기본 2000ms
+  maxRetries?: number;
+  retryDelayMs?: number;
 }
 
-/** Token */
 function getAccessToken(): string {
-  return (
-    localStorage.getItem("accessToken") ||
-    sessionStorage.getItem("accessToken") ||
-    ""
-  );
+  return sessionStorage.getItem("accessToken") || "";
 }
 
-/** region 문자열에서 'OO구'만 추출 (서버가 구 단위만 받는 경우 400 방지) */
-function sanitizeRegion(v?: string): string | undefined {
+export function sanitizeRegion(v?: string): string | undefined {
   if (!v) return undefined;
   const m = String(v).match(/([가-힣A-Za-z]+구)/);
   return m ? m[1] : undefined;
 }
 
-/** BASE_URL → ws(s) URL */
 function buildUrl(as: "web" | "mobile", region?: string): string {
   const token = getAccessToken();
-
-  // BASE_URL 기준 + 현재 페이지 프로토콜 기준으로 ws/wss 결정
   const base = new URL(BASE_URL);
   const pageIsHttps = typeof window !== "undefined" && window.location.protocol === "https:";
   const mustSecure = pageIsHttps || base.protocol === "https:";
@@ -110,21 +103,15 @@ export function connectLocationWS(opts: ConnectOptions): () => void {
 
   const DEBUG = localStorage.getItem("debug:ws") === "1";
   const url = buildUrl(as, region);
-
-  const clearRetryTimer = () => {
-    if (retryTimer !== null) {
-      window.clearTimeout(retryTimer);
-      retryTimer = null;
-    }
-  };
+  const log = (...a: any[]) => DEBUG && console.log("[WS]", ...a);
+  const warn = (...a: any[]) => DEBUG && console.warn("[WS]", ...a);
 
   const scheduleReconnect = () => {
     if (!reconnect || closedByClient) return;
-    if (retries >= (maxRetries ?? 3)) return;
-    const delay = (retryDelayMs ?? 2000) * Math.pow(2, retries);
-    retries += 1;
-    retryTimer = window.setTimeout(() => connect(), delay);
-    if (DEBUG) console.log(`[WS] reconnect in ${delay}ms (#${retries})`);
+    if (retries >= maxRetries) return;
+    const delay = (retryDelayMs ?? 2000) * Math.pow(2, retries++);
+    retryTimer = window.setTimeout(connect, delay);
+    log(`reconnect in ${delay}ms (#${retries})`);
   };
 
   const connect = () => {
@@ -132,47 +119,70 @@ export function connectLocationWS(opts: ConnectOptions): () => void {
     connecting = true;
 
     try {
-      if (DEBUG) console.log("[WS] connecting:", url);
+      log("connecting:", url);
       ws = new WebSocket(url);
 
       ws.onopen = (ev) => {
         connecting = false;
         retries = 0;
-        if (DEBUG) console.log("[WS] open");
+        log("open");
         onOpen?.(ev);
       };
 
       ws.onerror = (ev) => {
         onError?.(ev);
-        if (DEBUG) console.warn("[WS] error");
+        warn("error", ev);
       };
 
       ws.onclose = (ev) => {
         connecting = false;
         onClose?.(ev);
-        if (DEBUG) console.log("[WS] close", ev.code, ev.reason);
+        log("close", ev.code, ev.reason);
         if (!closedByClient) scheduleReconnect();
       };
 
       ws.onmessage = (ev) => {
-        let data: WSMessage;
+        let obj: any;
         try {
-          data = JSON.parse(ev.data);
+          obj = JSON.parse(ev.data);
         } catch {
-          if (DEBUG) console.warn("[WS] invalid JSON");
+          warn("invalid JSON:", ev.data);
           return;
         }
-        if (!data || typeof data !== "object") return;
 
-        const type = (data as any).type;
-        if (type === "location" && handlers?.onLocation) {
-          handlers.onLocation(
-            data as { type: "location"; payload: LocationPayload }
-          );
-        } else if (type === "health" && handlers?.onHealth) {
-          handlers.onHealth(
-            data as { type: "health"; payload: HealthPayload }
-          );
+        // 표준 형태: { type, payload }
+        let type = obj?.type as string | undefined;
+        let payload = obj?.payload ?? obj;
+
+        if (!type) {
+          const looksLoc = payload && typeof payload.lat === "number" && typeof payload.lng === "number";
+          const looksHealth =
+            payload &&
+            ("isFallDetected" in payload ||
+             "heartRate" in payload ||
+             "step" in payload ||
+             "level" in payload ||
+             "score" in payload ||
+             "fatigueScore" in payload);
+
+          if (looksLoc) type = "location";
+          else if (looksHealth) type = "health";
+        }
+
+        // 최소 보정: driverId 없고 userId가 숫자면 변환
+        if (payload && payload.driverId == null && payload.userId != null) {
+          const n = Number(payload.userId);
+          if (Number.isFinite(n)) payload.driverId = n;
+        }
+
+        if (type === "location") {
+          log("message ← location", payload);
+          handlers?.onLocation?.({ type: "location", payload });
+        } else if (type === "health") {
+          log("message ← health", payload);
+          handlers?.onHealth?.({ type: "health", payload });
+        } else {
+          log("ignored", obj);
         }
       };
     } catch {
@@ -185,14 +195,12 @@ export function connectLocationWS(opts: ConnectOptions): () => void {
 
   return () => {
     closedByClient = true;
-    clearRetryTimer();
-    if (
-      ws &&
-      (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)
-    ) {
-      try {
-        ws.close(1000, "client-close");
-      } catch {}
+    if (retryTimer != null) {
+      window.clearTimeout(retryTimer);
+      retryTimer = null;
+    }
+    if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+      try { ws.close(1000, "client-close"); } catch {}
     }
     ws = null;
   };

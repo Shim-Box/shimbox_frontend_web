@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, useContext, useRef } from "react";
+import React, { useEffect, useMemo, useState, useContext } from "react";
 import { useNavigate } from "react-router-dom";
 import Sidebar from "../pages/Sidebar";
 import "../styles/UnassignedProducts.css";
@@ -19,9 +19,7 @@ type UnassignedItem = {
 
 type FieldKey = "ALL" | "productName" | "recipientName" | "address" | "postalCode";
 
-const PAGE_SIZE = 20; // 페이지네이션 값은 유지 (items가 10건이므로 1페이지로 표시됨)
-const ANIM_MS = 450; // CSS와 동일(0.85s)
-const GAP_MS = 80;  // 다음 줄로 넘어가기 전 약간의 텀
+const PAGE_SIZE = 15;
 
 const UnassignedProduct: React.FC = () => {
   const { token } = useContext(AuthContext);
@@ -36,29 +34,21 @@ const UnassignedProduct: React.FC = () => {
   // 페이지네이션 상태
   const [page, setPage] = useState(1);
 
-  // 선택 상태(상품 ID 집합) — 페이지 이동/검색 변화에도 유지
-  const [selected, setSelected] = useState<Set<number>>(new Set());
-
-  // 애니메이션 중인 행(사라질 예정)
-  const [leaving, setLeaving] = useState<Set<number>>(new Set());
-
-  // 헤더 전체선택 체크박스 ref(일부 선택 시 indeterminate)
-  const headerCheckRef = useRef<HTMLInputElement | null>(null);
-
+  // ─────────────── 데이터 로딩 ───────────────
   useEffect(() => {
     if (!token) return;
     setLoading(true);
     ApiService.fetchUnassignedProducts()
       .then((list) => {
         const validList = Array.isArray(list) ? list : [];
-        // ✅ 받아온 전체 목록 중 앞의 10건만 화면에 보여주기
-        setItems(validList.slice(0, 10));
+        // ✅ 전체 다 보여주기 (slice 제거)
+        setItems(validList);
       })
       .catch(() => setItems([]))
       .finally(() => setLoading(false));
   }, [token]);
 
-  // 검색 필터링
+  // ─────────────── 검색 필터링 ───────────────
   const filtered = useMemo(() => {
     const q = query.trim();
     if (!q) return items;
@@ -94,50 +84,6 @@ const UnassignedProduct: React.FC = () => {
     return filtered.slice(start, start + PAGE_SIZE);
   }, [filtered, page]);
 
-  // (수정) 필터 결과 전체 기준 전체선택 여부
-  const allCheckedFiltered = useMemo(() => {
-    if (filtered.length === 0) return false;
-    return filtered.every((it) => selected.has(it.productId));
-  }, [filtered, selected]);
-
-  // (선택 일부인 경우) 헤더 체크박스 indeterminate 반영
-  useEffect(() => {
-    if (!headerCheckRef.current) return;
-    const someChecked = filtered.some((it) => selected.has(it.productId));
-    headerCheckRef.current.indeterminate = someChecked && !allCheckedFiltered;
-  }, [filtered, selected, allCheckedFiltered]);
-
-  const toggleOne = (id: number, checked: boolean) => {
-    setSelected((prev) => {
-      const ns = new Set(prev);
-      if (checked) ns.add(id);
-      else ns.delete(id);
-      return ns;
-    });
-  };
-
-  // (수정) 헤더 전체선택: 필터 결과 전체(모든 페이지) 토글
-  const toggleFilteredAll = (checked: boolean) => {
-    setSelected((prev) => {
-      if (checked) {
-        return new Set(filtered.map((it) => it.productId));
-      }
-      // 해제
-      const ns = new Set(prev);
-      filtered.forEach((it) => ns.delete(it.productId));
-      return ns;
-    });
-  };
-
-  // 기존 "전체 선택" 버튼(필터 결과 전체)과 동일 동작
-  const toggleAllPages = () => {
-    setSelected((prev) => {
-      const allIds = filtered.map((it) => it.productId);
-      const allSelected = allIds.length > 0 && allIds.every((id) => prev.has(id));
-      return allSelected ? new Set<number>() : new Set(allIds);
-    });
-  };
-
   // 페이지네이션 버튼
   const pageButtons = useMemo(() => {
     const maxButtons = 7;
@@ -151,47 +97,21 @@ const UnassignedProduct: React.FC = () => {
 
   const go = (p: number) => setPage(Math.min(totalPages, Math.max(1, p)));
 
-  // 순차(정말 한 줄씩) 애니메이션 + 제거
-  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-  const animateAssignAndRemove = async (ids: number[]) => {
-    for (const id of ids) {
-      // 1) 애니메이션 시작
-      setLeaving((prev) => new Set([...prev, id]));
-
-      // 2) 애니메이션 시간만큼 대기
-      await sleep(ANIM_MS);
-
-      // 3) 실제 제거
-      setItems((prev) => prev.filter((it) => it.productId !== id));
-      setSelected((prev) => {
-        const ns = new Set(prev);
-        ns.delete(id);
-        return ns;
-      });
-
-      // 4) leaving 상태 해제
-      setLeaving((prev) => {
-        const ns = new Set(prev);
-        ns.delete(id);
-        return ns;
-      });
-
-      // 5) 다음 줄로 넘어가기 전 아주 살짝 텀
-      await sleep(GAP_MS);
-    }
+  // ─────────────── 물류 넣기 버튼 (TODO) ───────────────
+  const handleInsertLogistics = () => {
+    // TODO: 나중에 선택 로직/팝업/배정 모달 등 연결
+    alert("물류 넣기 기능은 아직 준비 중입니다. (나중에 API 연결 예정)");
   };
 
-  const handleAssignSelected = async () => {
-    const ids = Array.from(selected).filter((id) => filtered.some((it) => it.productId === id));
-    if (ids.length === 0) return;
-    await animateAssignAndRemove(ids);
-  };
-
+  // ─────────────── 전체 배정 버튼 (TODO: 나중에 API 연결) ───────────────
   const handleAssignAll = async () => {
-    const allIds = filtered.map((it) => it.productId);
-    if (allIds.length === 0) return;
-    await animateAssignAndRemove(allIds);
+    if (filtered.length === 0) return;
+
+    // TODO: 나중에 여기서 실제 "배정 API" 호출하면 됨
+    // 예:
+    // await ApiService.assignUnassignedProducts(filtered.map((it) => it.productId));
+
+    alert("전체 물류 배정 기능은 아직 준비 중입니다. (나중에 API 연결 예정)");
   };
 
   return (
@@ -205,7 +125,7 @@ const UnassignedProduct: React.FC = () => {
             <p className="subtitle">할당되지 않은 상품 목록</p>
           </div>
 
-          {/* 검색 바 + 배정 버튼들 */}
+          {/* 검색 바 + 버튼들 */}
           <div className="toolbar">
             <select
               className="field-select"
@@ -237,26 +157,17 @@ const UnassignedProduct: React.FC = () => {
               </button>
             )}
 
+            {/* 👉 물류 넣기 + 전체 물류 배정 버튼 */}
             <div className="assign-group">
-              {/* 필터 결과(모든 페이지) 전체 선택/해제 */}
-              <button
-                className="assign-tertiary"
-                disabled={filtered.length === 0}
-                onClick={toggleAllPages}
-                title="필터 결과(모든 페이지) 전체 선택/해제"
-                aria-pressed={filtered.length > 0 && filtered.every((it) => selected.has(it.productId))}
-              >
-                전체 선택
-              </button>
-
               <button
                 className="assign-primary"
-                disabled={selected.size === 0}
-                onClick={handleAssignSelected}
-                title="체크된 상품만 배정"
+                disabled={filtered.length === 0}
+                onClick={handleInsertLogistics}
+                title="선택된 물건들을 물류에 넣기"
               >
-                선택 배정
+                물류 넣기
               </button>
+
               <button
                 className="assign-secondary"
                 disabled={filtered.length === 0}
@@ -271,7 +182,7 @@ const UnassignedProduct: React.FC = () => {
 
         <div className="result-summary">
           총 {filtered.length.toLocaleString()}건
-          {query ? ` (검색어: “${query}”)` : ""} · 선택 {selected.size}건
+          {query ? ` (검색어: “${query}”)` : ""}
         </div>
 
         {loading ? (
@@ -283,16 +194,6 @@ const UnassignedProduct: React.FC = () => {
             <table className="unassigned-table">
               <thead>
                 <tr>
-                  <th style={{ width: 44 }}>
-                    {/* (수정) 필터 결과 전체 토글 */}
-                    <input
-                      ref={headerCheckRef}
-                      type="checkbox"
-                      checked={allCheckedFiltered}
-                      onChange={(e) => toggleFilteredAll(e.target.checked)}
-                      aria-label="필터 결과 전체 선택"
-                    />
-                  </th>
                   <th>ID</th>
                   <th>상품명</th>
                   <th>수취인</th>
@@ -302,33 +203,18 @@ const UnassignedProduct: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {pageData.map((it) => {
-                  const checked = selected.has(it.productId);
-                  return (
-                    <tr
-                      key={it.productId}
-                      className={leaving.has(it.productId) ? "leaving" : ""}
-                    >
-                      <td>
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={(e) => toggleOne(it.productId, e.target.checked)}
-                          aria-label={`${it.productId} 선택`}
-                          disabled={leaving.has(it.productId)}
-                        />
-                      </td>
-                      <td>{it.productId}</td>
-                      <td>{it.productName}</td>
-                      <td>{it.recipientName}</td>
-                      <td>{it.recipientPhoneNumber}</td>
-                      <td>
-                        {it.address} {it.detailAddress}
-                      </td>
-                      <td>{it.postalCode}</td>
-                    </tr>
-                  );
-                })}
+                {pageData.map((it) => (
+                  <tr key={it.productId}>
+                    <td>{it.productId}</td>
+                    <td>{it.productName}</td>
+                    <td>{it.recipientName}</td>
+                    <td>{it.recipientPhoneNumber}</td>
+                    <td>
+                      {it.address} {it.detailAddress}
+                    </td>
+                    <td>{it.postalCode}</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
 
@@ -336,7 +222,11 @@ const UnassignedProduct: React.FC = () => {
               <button onClick={() => go(1)} disabled={page === 1} aria-label="첫 페이지">
                 «
               </button>
-              <button onClick={() => go(page - 1)} disabled={page === 1} aria-label="이전 페이지">
+              <button
+                onClick={() => go(page - 1)}
+                disabled={page === 1}
+                aria-label="이전 페이지"
+              >
                 ‹
               </button>
 
@@ -371,7 +261,9 @@ const UnassignedProduct: React.FC = () => {
       </div>
 
       <Footer
-        onSearch={(ff: FooterFilters, nq?: string) => navigate("/manage", { state: { ff, nq } })}
+        onSearch={(ff: FooterFilters, nq?: string) =>
+          navigate("/manage", { state: { ff, nq } })
+        }
       />
     </div>
   );
