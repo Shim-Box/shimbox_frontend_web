@@ -26,6 +26,7 @@ const UnassignedProduct: React.FC = () => {
   const navigate = useNavigate();
   const [items, setItems] = useState<UnassignedItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [assigning, setAssigning] = useState(false); // 🔥 AI 배정 실행 중 여부
 
   // 검색 상태
   const [query, setQuery] = useState("");
@@ -98,9 +99,31 @@ const UnassignedProduct: React.FC = () => {
 
   // ─────────────── 전체 배정 버튼 ───────────────
   const handleAssignAll = async () => {
+    if (assigning) return;
     if (filtered.length === 0) return;
 
-    alert("전체 물류 배정 기능은 아직 준비 중입니다. (나중에 API 연결 예정)");
+    const ok = window.confirm("AI 자동 배정을 실행할까요?");
+    if (!ok) return;
+
+    try {
+      setAssigning(true);
+
+      // ***Flask AI 서버 호출 (python -m scripts.assign_tomorrow 실행)
+      const res: any = await ApiService.runAiAssignTomorrow();
+
+      alert(res?.message || "AI 물류 배정을 완료했습니다.");
+
+      // 배정 후, 미할당 상품 목록 다시 로딩
+      const list = await ApiService.fetchUnassignedProducts();
+      const validList = Array.isArray(list) ? list : [];
+      setItems(validList);
+      setPage(1);
+    } catch (e) {
+      console.error(e);
+      alert("AI 물류 배정 실행 중 오류가 발생했습니다.");
+    } finally {
+      setAssigning(false);
+    }
   };
 
   return (
@@ -149,11 +172,11 @@ const UnassignedProduct: React.FC = () => {
             <div className="assign-group">
               <button
                 className="assign-secondary"
-                disabled={filtered.length === 0}
+                disabled={filtered.length === 0 || assigning}
                 onClick={handleAssignAll}
                 title="필터 결과 전체 배정"
               >
-                전체 물류 배정
+                {assigning ? "배정 중..." : "전체 물류 배정"}
               </button>
             </div>
           </div>

@@ -20,6 +20,7 @@ const ACCESS_KEY = "accessToken";
 const REFRESH_KEY = "refreshToken";
 
 const BASE_URL = process.env.REACT_APP_API_BASE_URL;
+const AI_BASE_URL = process.env.REACT_APP_AI_BASE_URL || BASE_URL;
 
 function getAccessToken() {
   // ✅ 세션스토리지만 사용: 창/탭 닫히면 자동 로그아웃
@@ -182,6 +183,12 @@ export type RealtimeLocationItem = {
 /** ─────────── 간단 캐시(메모리) ─────────── */
 const productListCache = new Map<number, DeliveryItem[]>();
 
+/** ─────────── AI 전용 클라이언트 (Flask 서버) ─────────── */
+const aiClient = axios.create({
+  baseURL: AI_BASE_URL,
+  headers: { "Content-Type": "application/json" },
+});
+
 /** ─────────── API 서비스 ─────────── */
 export const ApiService = {
   /* Auth */
@@ -318,6 +325,17 @@ export const ApiService = {
       .then(unwrap)
       .catch((e: AxiosError) => {
         if (e.response?.status === 404) return [] as UnassignedProduct[];
+        throw e;
+      });
+  },
+
+  /** 추가) AI 배정 엔진 실행 (Flask /admin/assign-tomorrow) */
+  runAiAssignTomorrow() {
+    return aiClient
+      .post("/admin/assign-tomorrow")
+      .then((res) => res.data)
+      .catch((e) => {
+        console.error("AI 배정 실행 실패:", e);
         throw e;
       });
   },

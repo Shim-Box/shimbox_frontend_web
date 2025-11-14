@@ -15,8 +15,8 @@ const Login: React.FC = () => {
     }
   }, [isLoggedIn, navigate]);
 
-  const [username, setUsername] = useState("admin@gmail.com");
-  const [password, setPassword] = useState("12341234");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 

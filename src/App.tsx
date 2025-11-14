@@ -19,7 +19,7 @@ import UnassignedProducts from "./pages/UnassignedProducts";
 
 const PrivateRoute: React.FC = () => {
   const { isLoggedIn, loading } = useContext(AuthContext);
-  if (loading) return null;
+  if (loading) return null; // 필요하면 로딩 스피너 등으로 교체 가능
 
   return isLoggedIn ? (
     <>
@@ -38,7 +38,6 @@ function App() {
         <BrowserRouter>
           <Routes>
             {/* ✅ 공개 라우트 */}
-            <Route path="/" element={<Main />} />            {/* 메인 공개 */}
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
 
@@ -47,6 +46,8 @@ function App() {
 
             {/* ✅ 보호 라우트 (로그인 필요) */}
             <Route element={<PrivateRoute />}>
+              {/* 메인도 보호 라우트로 이동 */}
+              <Route path="/" element={<Main />} />
               <Route path="/manage" element={<Manage />} />
               <Route path="/driver/:id" element={<DriverDetail />} />
               <Route path="/products/unassigned" element={<UnassignedProducts />} />
