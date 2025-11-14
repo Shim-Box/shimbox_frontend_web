@@ -41,7 +41,6 @@ const UnassignedProduct: React.FC = () => {
     ApiService.fetchUnassignedProducts()
       .then((list) => {
         const validList = Array.isArray(list) ? list : [];
-        // ✅ 전체 다 보여주기 (slice 제거)
         setItems(validList);
       })
       .catch(() => setItems([]))
@@ -97,19 +96,9 @@ const UnassignedProduct: React.FC = () => {
 
   const go = (p: number) => setPage(Math.min(totalPages, Math.max(1, p)));
 
-  // ─────────────── 물류 넣기 버튼 (TODO) ───────────────
-  const handleInsertLogistics = () => {
-    // TODO: 나중에 선택 로직/팝업/배정 모달 등 연결
-    alert("물류 넣기 기능은 아직 준비 중입니다. (나중에 API 연결 예정)");
-  };
-
-  // ─────────────── 전체 배정 버튼 (TODO: 나중에 API 연결) ───────────────
+  // ─────────────── 전체 배정 버튼 ───────────────
   const handleAssignAll = async () => {
     if (filtered.length === 0) return;
-
-    // TODO: 나중에 여기서 실제 "배정 API" 호출하면 됨
-    // 예:
-    // await ApiService.assignUnassignedProducts(filtered.map((it) => it.productId));
 
     alert("전체 물류 배정 기능은 아직 준비 중입니다. (나중에 API 연결 예정)");
   };
@@ -157,17 +146,7 @@ const UnassignedProduct: React.FC = () => {
               </button>
             )}
 
-            {/* 👉 물류 넣기 + 전체 물류 배정 버튼 */}
             <div className="assign-group">
-              <button
-                className="assign-primary"
-                disabled={filtered.length === 0}
-                onClick={handleInsertLogistics}
-                title="선택된 물건들을 물류에 넣기"
-              >
-                물류 넣기
-              </button>
-
               <button
                 className="assign-secondary"
                 disabled={filtered.length === 0}
